@@ -20,6 +20,7 @@ import {
 import { validateToolchainConfig } from './utils/compatibilityChecker';
 import { generateToolchainFiles, generateSmallZipUnits } from './utils/toolchainGenerator';
 import { downloadProjectZip } from './utils/zipExporter';
+import { CertificationRunner } from './components/CertificationRunner';
 
 export default function App() {
   // Navigation State
@@ -1562,13 +1563,15 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
         {/* TAB 7: CERTIFICATION */}
         {activeTab === 'certification' && (
           <div className="space-y-6">
+            <CertificationRunner />
+
             <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-8 space-y-8 shadow-xl">
               <div className="flex items-center space-x-3 pb-4 border-b border-slate-800">
                 <div className="p-2.5 bg-amber-600/20 text-amber-400 rounded-xl border border-amber-500/30">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white">Current Certification State</h3>
+                  <h3 className="text-xl font-bold text-white">Certification Rules & Invariants</h3>
                   <p className="text-sm text-slate-400 font-mono mt-1">
                     End-to-end provenance, transport, and execution certification invariants.
                   </p>
