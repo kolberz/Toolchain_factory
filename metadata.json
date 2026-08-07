@@ -1,0 +1,6 @@
+{
+  "name": "Toolchain Factory",
+  "description": "Interactive developer studio and visual toolchain architect for generating modern full-stack web applications, CI/CD pipelines, Docker configs, and setup scripts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
