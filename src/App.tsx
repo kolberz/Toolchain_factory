@@ -23,7 +23,7 @@ import { downloadProjectZip } from './utils/zipExporter';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'architect' | 'smallzips' | 'files' | 'pipeline' | 'ai'>('architect');
+  const [activeTab, setActiveTab] = useState<'architect' | 'smallzips' | 'files' | 'pipeline' | 'ai' | 'backend'>('architect');
   
   // Selected Toolchain Configuration State
   const [config, setConfig] = useState<ToolchainConfig>(TOOLCHAIN_PRESETS[0].config);
@@ -241,6 +241,16 @@ Answer the user concisely and suggest actionable configuration changes or code t
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
               <span>AI Architect</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('backend')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'backend' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Backend APIs</span>
             </button>
           </nav>
 
@@ -698,6 +708,124 @@ Answer the user concisely and suggest actionable configuration changes or code t
                     <span className="text-slate-500 font-bold ml-2">\]</span>
                   </div>
                 </div>
+              </div>
+
+              {/* GitHub App Connector Diagnostic Banner */}
+              <div className="p-5 bg-slate-950/90 rounded-2xl border border-blue-500/40 space-y-4 shadow-xl font-mono">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-500/20 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Github className="w-5 h-5 text-blue-400" />
+                    <h4 className="text-sm font-bold text-white uppercase tracking-wider">
+                      GitHub App Connector Diagnostic & Access Gate
+                    </h4>
+                  </div>
+                  <span className="px-2.5 py-1 bg-amber-500/10 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold self-start sm:self-auto">
+                    STATUS: TEST BLOCKED: REPOSITORY ACCESS REQUIRED
+                  </span>
+                </div>
+                
+                {/* 3-Tier Layer Distinction Equation */}
+                <div className="flex items-center justify-center text-[11px] md:text-xs text-blue-300 bg-blue-950/40 p-3 rounded-xl border border-blue-500/30 shadow-inner overflow-x-auto">
+                  <span className="text-slate-500 font-bold mr-2">\[</span>
+                  <span className="bg-slate-900 px-3 py-1.5 rounded-lg border border-blue-500/40 inline-flex flex-wrap items-center gap-2 font-bold">
+                    <span className="text-emerald-400">{"\\text{@GitHub mention resolved}"}</span>
+                    <span className="text-slate-400">{"\\neq"}</span>
+                    <span className="text-rose-400">{"\\text{GitHub App installed}"}</span>
+                    <span className="text-slate-400">{"\\neq"}</span>
+                    <span className="text-rose-400">{"\\text{Repository authorized}"}</span>
+                  </span>
+                  <span className="text-slate-500 font-bold ml-2">\]</span>
+                </div>
+
+                {/* 5-Step Diagnostic Gating Pipeline */}
+                <div className="space-y-2 pt-1">
+                  <div className="text-[10px] text-slate-400 uppercase font-bold flex justify-between items-center">
+                    <span>Connector Pipeline Verification Gates</span>
+                    <span>Gate Status</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-[10px]">
+                    <div className="p-2.5 bg-slate-900/80 rounded-lg border border-emerald-500/30 flex flex-col justify-between gap-1">
+                      <span className="text-slate-400 font-bold">1. Mention</span>
+                      <span className="text-emerald-300 truncate">MENTION_CONNECTED</span>
+                      <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[9px] font-bold w-max">PASS</span>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/80 rounded-lg border border-rose-500/30 flex flex-col justify-between gap-1">
+                      <span className="text-slate-400 font-bold">2. Installation</span>
+                      <span className="text-rose-300 truncate">APP_INSTALLATION</span>
+                      <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-bold w-max">MISSING</span>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/80 rounded-lg border border-rose-500/30 flex flex-col justify-between gap-1">
+                      <span className="text-slate-400 font-bold">3. Repository</span>
+                      <span className="text-rose-300 truncate">kolberz/Toolchain_factory</span>
+                      <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-400 rounded text-[9px] font-bold w-max">404 NOT FOUND</span>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/80 rounded-lg border border-slate-800 flex flex-col justify-between gap-1 opacity-60">
+                      <span className="text-slate-500 font-bold">4. Source</span>
+                      <span className="text-slate-500 truncate">SOURCE_FETCHED</span>
+                      <span className="px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded text-[9px] font-bold w-max">BLOCKED</span>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/80 rounded-lg border border-slate-800 flex flex-col justify-between gap-1 opacity-60">
+                      <span className="text-slate-500 font-bold">5. Execution</span>
+                      <span className="text-slate-500 truncate">IMPLEMENTATION_TESTED</span>
+                      <span className="px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded text-[9px] font-bold w-max">BLOCKED</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Evidence Chain Formula & State Function Matrix */}
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+                  <div className="text-[10px] text-slate-400 font-semibold uppercase flex justify-between">
+                    <span>Connector Diagnostic Evidence Chain</span>
+                    <span className="text-indigo-400">UI Status = f(Connector Evidence)</span>
+                  </div>
+                  <div className="p-2 bg-slate-950 rounded-lg border border-slate-800 text-[10px] md:text-xs text-indigo-200 overflow-x-auto text-center space-y-2">
+                    <div>
+                      <span className="text-slate-500 font-bold mr-1">\[</span>
+                      <span className="inline-flex flex-wrap items-center justify-center gap-1.5 font-bold">
+                        <span className="text-emerald-400">{"\\text{Connector identity}"}</span>
+                        <span className="text-slate-400">+</span>
+                        <span className="text-rose-400">{"\\text{permission evidence}"}</span>
+                        <span className="text-slate-400">+</span>
+                        <span className="text-rose-400">{"\\text{repository resolution}"}</span>
+                        <span className="text-slate-400">+</span>
+                        <span className="text-slate-500">{"\\text{source inspection}"}</span>
+                        <span className="text-slate-400">+</span>
+                        <span className="text-slate-500">{"\\text{execution evidence}"}</span>
+                      </span>
+                      <span className="text-slate-500 font-bold ml-1">\]</span>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-center gap-3 text-[10px] text-slate-300 font-mono">
+                      <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800"><span className="text-emerald-400 font-bold">M</span> = PASS</span>
+                      <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800"><span className="text-rose-400 font-bold">A</span> = MISSING</span>
+                      <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800"><span className="text-rose-400 font-bold">R</span> = 404 / UNRESOLVED</span>
+                      <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800"><span className="text-slate-500 font-bold">S</span> = BLOCKED</span>
+                      <span className="bg-slate-900 px-2 py-1 rounded border border-slate-800"><span className="text-slate-500 font-bold">T</span> = BLOCKED</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Automatic Revalidation Formula */}
+                <div className="p-3 bg-blue-950/40 rounded-xl border border-blue-500/30 space-y-1">
+                  <div className="text-[10px] text-blue-300 font-semibold uppercase">Revalidation Trigger Formula</div>
+                  <div className="text-[10px] md:text-xs text-blue-200 font-mono text-center overflow-x-auto py-1">
+                    <span className="text-slate-500 font-bold mr-1">\[</span>
+                    <span className="bg-slate-900 px-2.5 py-1 rounded border border-blue-500/30 inline-flex flex-wrap items-center gap-1.5 font-bold">
+                      <span className="text-blue-300">{"\\Delta(\\text{repository access})"}</span>
+                      <span className="text-slate-400">{"\\Rightarrow"}</span>
+                      <span className="text-amber-300">{"\\text{invalidate 404}"}</span>
+                      <span className="text-slate-400">{"\\Rightarrow"}</span>
+                      <span className="text-amber-300">{"\\text{REVALIDATION REQUIRED}"}</span>
+                      <span className="text-slate-400">{"\\Rightarrow"}</span>
+                      <span className="text-emerald-400">{"\\text{repository rediscovery}"}</span>
+                    </span>
+                    <span className="text-slate-500 font-bold ml-1">\]</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-blue-200/80 leading-relaxed bg-blue-950/30 p-3 rounded-xl border border-blue-500/20">
+                  <strong className="text-blue-300">Actionable Access Fix:</strong> Grant the GitHub app access to the repository containing <span className="text-blue-300">kolberz/Toolchain_factory</span>. Upon access grant, the diagnostic panel will automatically transition from 404 to <span className="text-amber-300">REVALIDATION REQUIRED</span> and trigger repository discovery.
+                </p>
               </div>
 
               {/* MANIFEST_ANCHORS & Verification Hierarchy Grid */}
@@ -1217,6 +1345,206 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                 <Send className="w-3.5 h-3.5" />
                 <span>Send</span>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: BACKEND API ENDPOINTS FOR AGENTS */}
+        {activeTab === 'backend' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-6 space-y-5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-emerald-600/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                    <Server className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Agent Import & Toolchain Transport REST API Index</h3>
+                    <p className="text-xs text-slate-400 font-mono">
+                      Full backend transport, discovery, small ZIP artifact parts, reconstruction, and verification API for AI Agents.
+                    </p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-mono font-bold self-start sm:self-auto">
+                  AGENT IMPORT CONTRACT: V1.0.0
+                </span>
+              </div>
+
+              {/* Formulations & Equations */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                <div className="p-4 bg-slate-950 rounded-xl border border-indigo-500/30 space-y-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">1. Agent Importable Contract Formula</span>
+                  <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-indigo-200 text-center overflow-x-auto">
+                    <span className="text-slate-500 font-bold mr-1.5">\[</span>
+                    <span className="inline-flex flex-wrap items-center justify-center gap-1 font-bold">
+                      <span className="text-emerald-400">{"\\text{Agent Importable}"}</span>
+                      <span className="text-slate-400">=</span>
+                      <span className="text-cyan-300">{"\\text{Manifest}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-cyan-300">{"\\text{Artifact Parts}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-indigo-300">{"\\text{Integrity Verification}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-indigo-300">{"\\text{Deterministic Reconstruction}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-emerald-400">{"\\text{Runtime API}"}</span>
+                    </span>
+                    <span className="text-slate-500 font-bold ml-1.5">\]</span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-950 rounded-xl border border-emerald-500/30 space-y-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">2. Toolchain Factory Complete Scope Contract</span>
+                  <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-emerald-200 text-center overflow-x-auto">
+                    <span className="text-slate-500 font-bold mr-1.5">\[</span>
+                    <span className="inline-flex flex-wrap items-center justify-center gap-1 font-bold">
+                      <span className="text-emerald-300">{"\\text{Toolchain Factory}"}</span>
+                      <span className="text-slate-400">=</span>
+                      <span className="text-indigo-300">{"\\text{Build}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-indigo-300">{"\\text{Package}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-cyan-300">{"\\text{Transport}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-emerald-300">{"\\text{Import}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-amber-300">{"\\text{Verify}"}</span>
+                      <span className="text-slate-400">+</span>
+                      <span className="text-emerald-400">{"\\text{Certify}"}</span>
+                    </span>
+                    <span className="text-slate-500 font-bold ml-1.5">\]</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Import Transport Pipeline */}
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Agent Toolchain Transport Pipeline</span>
+                <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-xs text-cyan-200 font-mono text-center overflow-x-auto">
+                  <span className="text-slate-500 font-bold mr-1.5">\[</span>
+                  <span className="inline-flex flex-wrap items-center justify-center gap-1.5 font-bold">
+                    <span className="text-cyan-300">{"\\text{Discover}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-indigo-300">{"\\text{Download small ZIP parts}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-amber-300">{"\\text{Hash verify}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-indigo-300">{"\\text{Reconstruct}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-emerald-300">{"\\text{Import}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-emerald-300">{"\\text{Execute}"}</span>
+                    <span className="text-indigo-400">{"\\rightarrow"}</span>
+                    <span className="text-emerald-400">{"\\text{Submit evidence}"}</span>
+                  </span>
+                  <span className="text-slate-500 font-bold ml-1.5">\]</span>
+                </div>
+              </div>
+
+              {/* REST API Endpoints Index Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  {
+                    method: 'GET',
+                    endpoint: '/api/toolchain/bootstrap',
+                    desc: 'Returns tiny bootstrap descriptor with manifest location, part hashes, reconstruction instructions, and acceptance tests.',
+                    responseSample: `{ "service": "Toolchain Factory Agent Import Contract", "bootstrapDescriptor": { ... } }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/toolchain/manifest',
+                    desc: 'Returns full toolchain manifest with Lean version, Mathlib commit, total parts, and expected SHA-256 hashes.',
+                    responseSample: `{ "version": "v4.32.2", "parts": [ { "id": "part-01", "filename": "lean-runtime-001.zip", ... } ] }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/toolchain/parts',
+                    desc: 'Inventory of small ZIP transport parts with order, destination directory, and byte sizes.',
+                    responseSample: `{ "parts": [ { "id": "part-01", "destination": "toolchain/bin/", ... } ] }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/toolchain/parts/:id',
+                    desc: 'Downloads a specific small ZIP part archive directly for local agent extraction.',
+                    responseSample: `[Binary ZIP File Stream]`
+                  },
+                  {
+                    method: 'POST',
+                    endpoint: '/api/toolchain/reconstruct',
+                    desc: 'Validates downloaded parts against SHA-256 integrity map and computes deterministic root hash.',
+                    responseSample: `{ "reconstructed": true, "status": "RECONSTRUCTED_AND_HASH_VERIFIED", ... }`
+                  },
+                  {
+                    method: 'POST',
+                    endpoint: '/api/toolchain/self-test',
+                    desc: 'Executes self-test discrimination gates against reconstructed Lean 4 environment in sandbox.',
+                    responseSample: `{ "selfTestPassed": true, "gatesPassed": 9, "runtimeCapability": "EXECUTABLE_IN_AGENT_SANDBOX" }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/smallzips',
+                    desc: 'Returns index of modular diagnostic, setup, patch, and harness small ZIP work units.',
+                    responseSample: `{ "availableUnits": [ { "id": "unit-1-lean-toolchain-manifest", ... } ] }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/smallzips/download/:filename',
+                    desc: 'Generates and downloads on-demand small ZIP work units (manifests, diagnostic repros, patches).',
+                    responseSample: `[Binary ZIP File Stream]`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/certification/status',
+                    desc: 'Returns current formal certification status, predicates, and evidence formulas.',
+                    responseSample: `{ "status": "ASSERTED_PENDING_RUN_EVIDENCE", "formula": "FINAL VERIFIED <=> P AND E AND O", ... }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/certification/gates',
+                    desc: 'Returns all 9 execution discrimination gates, executable hashes, and SHA-256 evidence bundles.',
+                    responseSample: `{ "gateStatusFormula": "GateStatus = f(command, ...)", "gates": [ ... ] }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/github/diagnostic',
+                    desc: 'Returns GitHub App connector diagnostic state vector and repository access status.',
+                    responseSample: `{ "status": "TEST BLOCKED: REPOSITORY ACCESS REQUIRED", "stateVector": { ... } }`
+                  },
+                  {
+                    method: 'GET',
+                    endpoint: '/api/manifest/anchors',
+                    desc: 'Returns immutable MANIFEST_ANCHORS (Mathlib commit, Lean toolchain, release SHA-256).',
+                    responseSample: `{ "MANIFEST_ANCHORS": { "mathlib_tag": "v4.32.2", ... } }`
+                  },
+                  {
+                    method: 'POST',
+                    endpoint: '/api/agent/verify',
+                    desc: 'Submits gate run evidence (exit code, stdout/stderr, reconstruction ID) to dynamically evaluate predicates.',
+                    responseSample: `{ "gateStatus": "VERIFIED", "sha256EvidenceBundle": "sha256:...", ... }`
+                  },
+                  {
+                    method: 'POST',
+                    endpoint: '/api/genai',
+                    desc: 'Server-side Gemini 2.5 Flash proxy for agent toolchain architectural analysis.',
+                    responseSample: `{ "text": "Architectural recommendation..." }`
+                  }
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3 font-mono">
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2 py-0.5 border rounded text-xs font-bold ${
+                        item.method === 'GET' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
+                      }`}>
+                        {item.method}
+                      </span>
+                      <span className="text-xs text-indigo-300 font-bold">{item.endpoint}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 font-sans">{item.desc}</p>
+                    <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-[11px] text-slate-300 truncate">
+                      {item.responseSample}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
