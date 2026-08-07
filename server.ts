@@ -23,12 +23,15 @@ async function startServer() {
   // 2. Certification Status Endpoint
   app.get('/api/certification/status', (req, res) => {
     res.json({
-      status: 'ASSERTED_PENDING_RUN_EVIDENCE',
-      formula: 'FINAL VERIFIED <=> P AND E AND O',
+      status: 'PROVENANCE VERIFIED + AGENT TRANSPORT CONTRACT IMPLEMENTED + COLD-IMPORT EXECUTION VERIFICATION PENDING',
+      target: 'PROVENANCE VERIFIED + TRANSPORT VERIFIED + EXECUTION VERIFIED + OFFLINE REPRODUCIBILITY VERIFIED',
+      formula: 'FINAL VERIFIED <=> P AND T AND E AND O_1 AND O_2',
       predicates: {
-        P: { name: 'provenance verified', value: true, state: 'ASSERTED' },
-        E: { name: 'all execution discrimination gates verified', value: false, state: 'PENDING_RUN_EVIDENCE' },
-        O: { name: 'both independent offline reconstructions verified', value: false, state: 'AWAITING_RECONSTRUCTION' }
+        P: { name: 'official provenance/hash anchors verified', value: true, state: 'ASSERTED' },
+        T: { name: 'transport parts independently downloaded and hash-verified', value: false, state: 'PENDING_COLD_IMPORT' },
+        E: { name: 'real Lean + Mathlib + Lake discrimination gates verified', value: false, state: 'PENDING_COLD_IMPORT' },
+        O_1: { name: 'fresh offline reconstruction #1 verified', value: false, state: 'PENDING_COLD_IMPORT' },
+        O_2: { name: 'fresh offline reconstruction #2 verified', value: false, state: 'PENDING_COLD_IMPORT' }
       },
       finalVerified: false,
       certificationChain: [

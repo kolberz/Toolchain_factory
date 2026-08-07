@@ -23,7 +23,7 @@ import { downloadProjectZip } from './utils/zipExporter';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'architect' | 'smallzips' | 'files' | 'pipeline' | 'ai' | 'backend'>('architect');
+  const [activeTab, setActiveTab] = useState<'architect' | 'smallzips' | 'files' | 'pipeline' | 'ai' | 'backend' | 'certification'>('architect');
   
   // Selected Toolchain Configuration State
   const [config, setConfig] = useState<ToolchainConfig>(TOOLCHAIN_PRESETS[0].config);
@@ -251,6 +251,16 @@ Answer the user concisely and suggest actionable configuration changes or code t
             >
               <Server className="w-3.5 h-3.5 text-emerald-400" />
               <span>Backend APIs</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('certification')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                activeTab === 'certification' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Certification</span>
             </button>
           </nav>
 
@@ -1544,6 +1554,92 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: CERTIFICATION */}
+        {activeTab === 'certification' && (
+          <div className="space-y-6">
+            <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-8 space-y-8 shadow-xl">
+              <div className="flex items-center space-x-3 pb-4 border-b border-slate-800">
+                <div className="p-2.5 bg-amber-600/20 text-amber-400 rounded-xl border border-amber-500/30">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">Current Certification State</h3>
+                  <p className="text-sm text-slate-400 font-mono mt-1">
+                    End-to-end provenance, transport, and execution certification invariants.
+                  </p>
+                </div>
+              </div>
+
+              {/* Current State Summary */}
+              <div className="p-6 bg-slate-950 rounded-xl border-2 border-amber-500/30 font-mono text-center space-y-4">
+                <span className="text-xs text-amber-400 font-bold uppercase tracking-widest block mb-2">CURRENT STATE</span>
+                <div className="flex flex-col items-center justify-center space-y-3">
+                  <div className="text-emerald-400 font-bold text-lg">PROVENANCE VERIFIED</div>
+                  <div className="text-slate-500">+</div>
+                  <div className="text-emerald-400 font-bold text-lg">AGENT TRANSPORT CONTRACT IMPLEMENTED</div>
+                  <div className="text-slate-500">+</div>
+                  <div className="text-amber-400 font-bold text-lg animate-pulse">COLD-IMPORT EXECUTION VERIFICATION PENDING</div>
+                </div>
+              </div>
+
+              {/* Target / Final Promotion Rules */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h4 className="text-xs text-slate-400 font-bold uppercase tracking-widest font-mono">FINAL CERTIFICATION TARGET</h4>
+                  <div className="p-5 bg-slate-900 rounded-xl border border-slate-800 font-mono text-sm space-y-3">
+                    <div className="text-emerald-400 font-bold">PROVENANCE VERIFIED</div>
+                    <div className="text-slate-500 text-xs">+</div>
+                    <div className="text-indigo-400 font-bold">TRANSPORT VERIFIED</div>
+                    <div className="text-slate-500 text-xs">+</div>
+                    <div className="text-cyan-400 font-bold">EXECUTION VERIFIED</div>
+                    <div className="text-slate-500 text-xs">+</div>
+                    <div className="text-purple-400 font-bold">OFFLINE REPRODUCIBILITY VERIFIED</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-xs text-slate-400 font-bold uppercase tracking-widest font-mono">PROMOTION PREDICATE</h4>
+                  <div className="p-5 bg-slate-900 rounded-xl border border-slate-800 font-mono text-sm space-y-3">
+                    <div className="text-center overflow-x-auto p-3 bg-slate-950 rounded-lg border border-slate-800">
+                      <span className="text-slate-500 font-bold mr-2">\[</span>
+                      <span className="text-amber-300">C_final</span>
+                      <span className="text-slate-400 mx-2">=</span>
+                      <span className="text-emerald-400">P</span>
+                      <span className="text-slate-400 mx-2">\land</span>
+                      <span className="text-indigo-400">T</span>
+                      <span className="text-slate-400 mx-2">\land</span>
+                      <span className="text-cyan-400">E</span>
+                      <span className="text-slate-400 mx-2">\land</span>
+                      <span className="text-purple-400">O_1</span>
+                      <span className="text-slate-400 mx-2">\land</span>
+                      <span className="text-purple-400">O_2</span>
+                      <span className="text-slate-500 font-bold ml-2">\]</span>
+                    </div>
+
+                    <ul className="space-y-2 text-xs text-slate-300 mt-4">
+                      <li><span className="text-emerald-400 font-bold mr-2">P =</span> Official provenance/hash anchors verified</li>
+                      <li><span className="text-indigo-400 font-bold mr-2">T =</span> Transport parts independently downloaded & hash-verified</li>
+                      <li><span className="text-cyan-400 font-bold mr-2">E =</span> Real Lean + Mathlib + Lake discrimination gates verified</li>
+                      <li><span className="text-purple-400 font-bold mr-2">O₁, O₂ =</span> Two fresh offline reconstructions verified</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirement Alert */}
+              <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-200/90 text-sm">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold">End-to-End Cold Import Validation Required</p>
+                  <p>
+                    The system refuses to emit <code>FINAL VERIFIED</code> until <code>P = T = E = O₁ = O₂ = true</code>. The current application layer builds, and the REST transport contract is implemented. However, formal certification requires an independent AI agent to execute the full discovery, offline reconstruction, and execution cycle in sandboxed environments.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
