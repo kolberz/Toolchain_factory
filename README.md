@@ -7,11 +7,12 @@ Toolchain Factory builds a genuine, portable Linux x86-64 Lean 4 + Lake + Mathli
 - Lean toolchain: `leanprover/lean4:v4.32.2`
 - Mathlib tag: `v4.32.2`
 - Mathlib commit: `905b95818eb32af7874a58b427f50c1711a5e96c`
+- Mathlib release dependency-lock SHA-256: `015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd`
 - Official Lean release: `lean-4.32.2-linux.tar.zst`
 - Release SHA-256: `5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa`
 - Release size: `563991635` bytes
 
-The workflow downloads the official release, verifies both its full 64-character SHA-256 and exact size, clones the exact Mathlib tag, verifies the resolved commit and `lean-toolchain`, runs `lake update`, and obtains Mathlib's compiled cache with `lake exe cache get`.
+The workflow downloads the official release, verifies both its full 64-character SHA-256 and exact size, clones the exact Mathlib tag, verifies the resolved commit and `lean-toolchain`, runs `lake update`, and obtains Mathlib's compiled cache with `lake exe cache get`. Because dependency default branches can move after a release, the workflow restores and verifies the release's content-addressed `lake-manifest.json` after the required `lake update`, then fetches/builds that locked dependency graph.
 
 ## Certification model
 

@@ -6,6 +6,7 @@ export const CANONICAL_ANCHORS = Object.freeze({
   leanToolchain: 'leanprover/lean4:v4.32.2',
   mathlibTag: 'v4.32.2',
   mathlibCommit: '905b95818eb32af7874a58b427f50c1711a5e96c',
+  mathlibLakeManifestSha256: '015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd',
   releaseArtifact: 'lean-4.32.2-linux.tar.zst',
   releaseTarballSha256: '5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa',
   releaseTarballBytes: 563_991_635,

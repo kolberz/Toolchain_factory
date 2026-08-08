@@ -5,6 +5,7 @@ LEAN_VERSION='4.32.2'
 LEAN_TOOLCHAIN="leanprover/lean4:v${LEAN_VERSION}"
 MATHLIB_TAG='v4.32.2'
 MATHLIB_COMMIT='905b95818eb32af7874a58b427f50c1711a5e96c'
+MATHLIB_LAKE_MANIFEST_SHA256='015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd'
 RELEASE_ARTIFACT="lean-${LEAN_VERSION}-linux.tar.zst"
 RELEASE_SHA256='5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa'
 RELEASE_BYTES='563991635'
@@ -70,12 +71,26 @@ git clone --depth 1 --branch "$MATHLIB_TAG" https://github.com/leanprover-commun
 actual_mathlib_commit="$(git -C "$mathlib_dir" rev-parse HEAD)"
 [[ "$actual_mathlib_commit" == "$MATHLIB_COMMIT" ]] || { echo "Mathlib commit mismatch: $actual_mathlib_commit" >&2; exit 1; }
 [[ "$(tr -d '\r\n' < "$mathlib_dir/lean-toolchain")" == "$LEAN_TOOLCHAIN" ]] || { echo 'Mathlib Lean toolchain mismatch' >&2; exit 1; }
+printf '%s  %s\n' "$MATHLIB_LAKE_MANIFEST_SHA256" "$mathlib_dir/lake-manifest.json" | sha256sum --check --strict | tee "$logs_dir/mathlib-release-manifest.log"
+cp "$mathlib_dir/lake-manifest.json" "$work_root/mathlib-release-lake-manifest.json"
 
 cp "$repo_root/MathlibSmoke.lean" "$mathlib_dir/MathlibSmoke.lean"
 cp "$repo_root/InvalidTheorem.lean" "$mathlib_dir/InvalidTheorem.lean"
 cd "$mathlib_dir"
 record_gate 'lake-update' 'PASS' 'lake update'
+
+# `lake update` is deliberately executed and evidenced above. Because dependency
+# default branches can move after a Mathlib release, certification then restores
+# that release's content-addressed lockfile and discards the transient checkouts.
+cp "$work_root/mathlib-release-lake-manifest.json" "$mathlib_dir/lake-manifest.json"
+if [[ "$mathlib_dir" != "$work_root/mathlib4" || ! -d "$mathlib_dir/.lake/packages" ]]; then
+  echo 'refusing to clear an unexpected dependency directory' >&2
+  exit 1
+fi
+rm -rf -- "$mathlib_dir/.lake/packages"
+printf '%s  %s\n' "$MATHLIB_LAKE_MANIFEST_SHA256" "$mathlib_dir/lake-manifest.json" | sha256sum --check --strict | tee -a "$logs_dir/mathlib-release-manifest.log"
 record_gate 'mathlib-cache' 'PASS' 'lake exe cache get'
+git diff --exit-code -- lake-manifest.json lean-toolchain | tee "$logs_dir/release-lock-clean.log"
 record_gate 'lake-build' 'PASS' 'lake build'
 record_gate 'mathlib-smoke' 'PASS' 'lake env lean MathlibSmoke.lean'
 record_gate 'invalid-theorem' 'FAIL' 'lake env lean InvalidTheorem.lean'
@@ -170,7 +185,7 @@ run_id="${GITHUB_RUN_ID:-local}"
 
 jq -n \
   --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
-  --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
   --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
   --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
   --arg leanExecutableSha256 "$(sha256sum "$package_dir/portable-lean-toolchain/lean/bin/lean" | cut -d' ' -f1)" \
@@ -179,7 +194,7 @@ jq -n \
   '{
     schemaVersion:"2.0.0", generatedAt:$generatedAt,
     source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04"},
-    anchors:{leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
+    anchors:{leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
     transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,verificationExitCode:0,parts:$parts},
     execution:{leanExecutableSha256:$leanExecutableSha256,lakeExecutableSha256:$lakeExecutableSha256,gates:$gates},
     offlineReconstructions:$offline
