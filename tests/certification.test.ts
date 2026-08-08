@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { CANONICAL_ANCHORS, GATE_DEFINITIONS, evaluateCertificationEvidence } from '../certification.ts';
+
+const sha = (character: string) => character.repeat(64);
+
+function validEvidence(): any {
+  return {
+    schemaVersion: '2.0.0',
+    generatedAt: '2026-08-08T00:00:00Z',
+    anchors: { ...CANONICAL_ANCHORS },
+    transport: {
+      archiveSha256: sha('a'),
+      workspaceTreeSha256: sha('b'),
+      verificationExitCode: 0,
+      parts: [
+        { filename: 'portable.tar.zst.part-000', sha256: sha('c'), bytes: 440 * 1024 * 1024 },
+        { filename: 'portable.tar.zst.part-001', sha256: sha('d'), bytes: 1024 }
+      ]
+    },
+    execution: {
+      leanExecutableSha256: sha('e'),
+      lakeExecutableSha256: sha('f'),
+      gates: GATE_DEFINITIONS.map(gate => ({
+        ...gate,
+        actualExitCode: gate.expectedOutcome === 'PASS' ? 0 : 1,
+        logSha256: sha('1')
+      }))
+    },
+    offlineReconstructions: [0, 1].map(index => ({
+      id: `offline-${index + 1}`,
+      networkMode: 'none',
+      lakeBuildExitCode: 0,
+      smokeExitCode: 0,
+      treeSha256: sha('b'),
+      logSha256: sha(String(index + 2))
+    }))
+  };
+}
+
+test('derives FINAL VERIFIED only from complete workflow evidence', () => {
+  const result = evaluateCertificationEvidence(validEvidence());
+  assert.equal(result.finalVerified, true);
+  assert.deepEqual(Object.values(result.predicates).map(value => value.value), [true, true, true, true, true]);
+});
+
+test('does not accept predicate booleans as evidence', () => {
+  const result = evaluateCertificationEvidence({ P: true, T: true, E: true, O_1: true, O_2: true });
+  assert.equal(result.finalVerified, false);
+});
+
+for (const attack of [
+  ['mutated part hash', (e: any) => { e.transport.parts[0].sha256 = 'not-a-hash'; }],
+  ['oversized part', (e: any) => { e.transport.parts[0].bytes = 450 * 1024 * 1024; }],
+  ['substituted executable', (e: any) => { e.execution.leanExecutableSha256 = 'substituted'; }],
+  ['falsified negative exit code', (e: any) => { e.execution.gates.find((g: any) => g.id === 'invalid-theorem').actualExitCode = 0; }],
+  ['stale reconstruction ID', (e: any) => { e.offlineReconstructions[1].id = 'offline-1'; }],
+  ['mismatched reconstruction tree', (e: any) => { e.offlineReconstructions[0].treeSha256 = sha('9'); }]
+] as const) {
+  test(`rejects actual evidence mutation: ${attack[0]}`, () => {
+    const evidence = validEvidence();
+    attack[1](evidence);
+    assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
+  });
+}

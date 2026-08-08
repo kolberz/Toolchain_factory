@@ -297,9 +297,9 @@ Answer the user concisely and suggest actionable configuration changes or code t
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs font-mono text-emerald-400">
-              <span>echo "# toolchain-factory" &gt;&gt; README.md &amp;&amp; git init &amp;&amp; git push origin main</span>
+              <span>git remote add origin https://github.com/kolberz/Toolchain_factory.git &amp;&amp; git push origin main</span>
               <button
-                onClick={() => copyToClipboard(`echo "# toolchain-factory" >> README.md\ngit init\ngit add README.md\ngit commit -m "first commit"\ngit branch -M main\ngit remote add origin https://github.com/kolberz/toolchain-factory.git\ngit push -u origin main`, 'git-commands')}
+                onClick={() => copyToClipboard(`git init\ngit add README.md\ngit commit -m "first commit"\ngit branch -M main\ngit remote add origin https://github.com/kolberz/Toolchain_factory.git\ngit push -u origin main`, 'git-commands')}
                 className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition-colors flex items-center gap-1 shrink-0"
               >
                 {copiedCommand === 'git-commands' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1370,14 +1370,14 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     <Server className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Agent Import & Toolchain Transport REST API Index</h3>
+                    <h3 className="text-base font-bold text-white">Workflow Evidence Verifier REST API</h3>
                     <p className="text-xs text-slate-400 font-mono">
-                      Full backend transport, discovery, small ZIP artifact parts, reconstruction, and verification API for AI Agents.
+                      Read-only server evaluation of manifests and certificates produced by the Linux GitHub Actions executor.
                     </p>
                   </div>
                 </div>
                 <span className="px-3 py-1 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-mono font-bold self-start sm:self-auto">
-                  AGENT IMPORT CONTRACT: V1.0.0
+                  EVIDENCE CONTRACT: V2.0.0
                 </span>
               </div>
 
@@ -1430,13 +1430,13 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
 
               {/* Import Transport Pipeline */}
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Agent Toolchain Transport Pipeline</span>
+                <span className="text-[10px] text-slate-400 font-mono font-bold uppercase">Certified Toolchain Transport Pipeline</span>
                 <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800 text-xs text-cyan-200 font-mono text-center overflow-x-auto">
                   <span className="text-slate-500 font-bold mr-1.5">\[</span>
                   <span className="inline-flex flex-wrap items-center justify-center gap-1.5 font-bold">
                     <span className="text-cyan-300">{"\\text{Discover}"}</span>
                     <span className="text-indigo-400">{"\\rightarrow"}</span>
-                    <span className="text-indigo-300">{"\\text{Download small ZIP parts}"}</span>
+                    <span className="text-indigo-300">{"\\text{Download Actions artifact parts}"}</span>
                     <span className="text-indigo-400">{"\\rightarrow"}</span>
                     <span className="text-amber-300">{"\\text{Hash verify}"}</span>
                     <span className="text-indigo-400">{"\\rightarrow"}</span>
@@ -1446,7 +1446,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     <span className="text-indigo-400">{"\\rightarrow"}</span>
                     <span className="text-emerald-300">{"\\text{Execute}"}</span>
                     <span className="text-indigo-400">{"\\rightarrow"}</span>
-                    <span className="text-emerald-400">{"\\text{Submit evidence}"}</span>
+                    <span className="text-emerald-400">{"\\text{Load server evidence}"}</span>
                   </span>
                   <span className="text-slate-500 font-bold ml-1.5">\]</span>
                 </div>
@@ -1458,68 +1458,32 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                   {
                     method: 'GET',
                     endpoint: '/api/toolchain/bootstrap',
-                    desc: 'Returns tiny bootstrap descriptor with manifest location, part hashes, reconstruction instructions, and acceptance tests.',
-                    responseSample: `{ "service": "Toolchain Factory Agent Import Contract", "bootstrapDescriptor": { ... } }`
+                    desc: 'Returns the workflow, build script, uploaded artifact names, and certification status endpoint.',
+                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "2.0.0" }`
                   },
                   {
                     method: 'GET',
                     endpoint: '/api/toolchain/manifest',
-                    desc: 'Returns full toolchain manifest with Lean version, Mathlib commit, total parts, and expected SHA-256 hashes.',
-                    responseSample: `{ "version": "v4.32.2", "parts": [ { "id": "part-01", "filename": "lean-runtime-001.zip", ... } ] }`
-                  },
-                  {
-                    method: 'GET',
-                    endpoint: '/api/toolchain/parts',
-                    desc: 'Inventory of small ZIP transport parts with order, destination directory, and byte sizes.',
-                    responseSample: `{ "parts": [ { "id": "part-01", "destination": "toolchain/bin/", ... } ] }`
-                  },
-                  {
-                    method: 'GET',
-                    endpoint: '/api/toolchain/parts/:id',
-                    desc: 'Downloads a specific small ZIP part archive directly for local agent extraction.',
-                    responseSample: `[Binary ZIP File Stream]`
-                  },
-                  {
-                    method: 'POST',
-                    endpoint: '/api/toolchain/reconstruct',
-                    desc: 'Validates downloaded parts against SHA-256 integrity map and computes deterministic root hash.',
-                    responseSample: `{ "reconstructed": true, "status": "RECONSTRUCTED_AND_HASH_VERIFIED", ... }`
-                  },
-                  {
-                    method: 'POST',
-                    endpoint: '/api/toolchain/self-test',
-                    desc: 'Executes self-test discrimination gates against reconstructed Lean 4 environment in sandbox.',
-                    responseSample: `{ "selfTestPassed": true, "gatesPassed": 9, "runtimeCapability": "EXECUTABLE_IN_AGENT_SANDBOX" }`
-                  },
-                  {
-                    method: 'GET',
-                    endpoint: '/api/smallzips',
-                    desc: 'Returns index of modular diagnostic, setup, patch, and harness small ZIP work units.',
-                    responseSample: `{ "availableUnits": [ { "id": "unit-1-lean-toolchain-manifest", ... } ] }`
-                  },
-                  {
-                    method: 'GET',
-                    endpoint: '/api/smallzips/download/:filename',
-                    desc: 'Generates and downloads on-demand small ZIP work units (manifests, diagnostic repros, patches).',
-                    responseSample: `[Binary ZIP File Stream]`
+                    desc: 'Returns a workflow-generated manifest only when TOOLCHAIN_MANIFEST_PATH is configured.',
+                    responseSample: `{ "error": "WORKFLOW_MANIFEST_NOT_LOADED" }`
                   },
                   {
                     method: 'GET',
                     endpoint: '/api/certification/status',
                     desc: 'Returns current formal certification status, predicates, and evidence formulas.',
-                    responseSample: `{ "status": "ASSERTED_PENDING_RUN_EVIDENCE", "formula": "FINAL VERIFIED <=> P AND E AND O", ... }`
+                    responseSample: `{ "status": "PENDING — GITHUB ACTIONS EVIDENCE NOT LOADED", "finalVerified": false, ... }`
                   },
                   {
                     method: 'GET',
                     endpoint: '/api/certification/gates',
-                    desc: 'Returns all 9 execution discrimination gates, executable hashes, and SHA-256 evidence bundles.',
-                    responseSample: `{ "gateStatusFormula": "GateStatus = f(command, ...)", "gates": [ ... ] }`
+                    desc: 'Returns immutable positive and expected-failure gate definitions without canned outcomes.',
+                    responseSample: `{ "gateStatusFormula": "actualOutcome(exitCode) === expectedOutcome(...)" }`
                   },
                   {
                     method: 'GET',
                     endpoint: '/api/github/diagnostic',
-                    desc: 'Returns GitHub App connector diagnostic state vector and repository access status.',
-                    responseSample: `{ "status": "TEST BLOCKED: REPOSITORY ACCESS REQUIRED", "stateVector": { ... } }`
+                    desc: 'Returns the configured repository target without inferring runtime authorization.',
+                    responseSample: `{ "repository": "kolberz/Toolchain_factory", "status": "REPOSITORY_TARGET_CONFIGURED" }`
                   },
                   {
                     method: 'GET',
@@ -1528,10 +1492,10 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     responseSample: `{ "MANIFEST_ANCHORS": { "mathlib_tag": "v4.32.2", ... } }`
                   },
                   {
-                    method: 'POST',
-                    endpoint: '/api/agent/verify',
-                    desc: 'Submits gate run evidence (exit code, stdout/stderr, reconstruction ID) to dynamically evaluate predicates.',
-                    responseSample: `{ "gateStatus": "VERIFIED", "sha256EvidenceBundle": "sha256:...", ... }`
+                    method: 'GET',
+                    endpoint: '/api/certification/evidence',
+                    desc: 'Returns the raw server-owned workflow evidence and its independently derived evaluation.',
+                    responseSample: `{ "evaluation": { ... }, "evidence": { ... } }`
                   },
                   {
                     method: 'POST',
@@ -1640,7 +1604,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                 <div className="space-y-1">
                   <p className="font-bold">End-to-End Cold Import Validation Required</p>
                   <p>
-                    The system refuses to emit <code>FINAL VERIFIED</code> until <code>P = T = E = O₁ = O₂ = true</code>. The current application layer builds, and the REST transport contract is implemented. However, formal certification requires an independent AI agent to execute the full discovery, offline reconstruction, and execution cycle in sandboxed environments.
+                    The system refuses to emit <code>FINAL VERIFIED</code> until <code>P = T = E = O₁ = O₂ = true</code>. Those predicates are derived from a successful GitHub Actions evidence artifact; the browser cannot assign or simulate them.
                   </p>
                 </div>
               </div>

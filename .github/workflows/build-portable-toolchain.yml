@@ -1,0 +1,72 @@
+name: Build portable Lean toolchain
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-portable-toolchain.yml'
+      - 'scripts/**'
+      - 'MathlibSmoke.lean'
+      - 'InvalidTheorem.lean'
+      - 'certification.ts'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  app-verifier-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  build-and-certify:
+    needs: app-verifier-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes jq rsync zstd
+      - name: Build and certify portable Lean + Lake + Mathlib
+        run: bash scripts/build-portable-toolchain.sh
+      - name: Upload every archive part
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-parts
+          path: |
+            out/parts/portable-lean-toolchain.tar.zst.part-*
+            out/parts/part-sha256sums.txt
+            out/toolchain-manifest.json
+            out/toolchain-manifest.json.sha256
+            scripts/verify-and-reconstruct.sh
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 30
+      - name: Upload checksums, certificate, and complete verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-verification
+          path: |
+            out/certification-evidence.json
+            out/certification-evidence.json.sha256
+            out/toolchain-manifest.json
+            out/toolchain-manifest.json.sha256
+            out/workspace-tree-sha256sums.txt
+            out/offline-*-tree-sha256sums.txt
+            out/verification-summary.log
+            out/logs/**
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 30
