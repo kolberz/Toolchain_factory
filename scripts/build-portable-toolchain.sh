@@ -148,7 +148,7 @@ docker pull ubuntu:24.04 > "$logs_dir/docker-image.log" 2>&1
 : > "$out_dir/offline.ndjson"
 for number in 1 2; do
   reconstruction="$work_root/offline-$number"
-  "$repo_root/scripts/verify-and-reconstruct.sh" "$parts_dir" "$reconstruction" > "$logs_dir/offline-$number-reconstruct.log" 2>&1
+  bash "$repo_root/scripts/verify-and-reconstruct.sh" "$parts_dir" "$reconstruction" > "$logs_dir/offline-$number-reconstruct.log" 2>&1
   (
     cd "$reconstruction/portable-lean-toolchain"
     find . -type f -print0 | sort -z | xargs -0 sha256sum
