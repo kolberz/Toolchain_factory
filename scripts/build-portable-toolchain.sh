@@ -161,10 +161,10 @@ for number in 1 2; do
 
   set +e
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'export PATH=/portable/lean/bin:/usr/bin:/bin; lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; export PATH=/portable/lean/bin:/usr/bin:/bin; lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
   offline_build_exit=$?
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'export PATH=/portable/lean/bin:/usr/bin:/bin; lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; export PATH=/portable/lean/bin:/usr/bin:/bin; lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
   offline_smoke_exit=$?
   set -e
   cat "$logs_dir/offline-$number-lake-build.log"
