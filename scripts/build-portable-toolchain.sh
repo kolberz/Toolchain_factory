@@ -105,7 +105,9 @@ smoke_exit="$(jq -s -r '.[] | select(.id == "mathlib-smoke") | .actualExitCode' 
 echo "Packaging Lean, Lake, Mathlib sources, dependencies, and compiled cache."
 mkdir -p "$package_dir/portable-lean-toolchain"
 cp -a "$lean_home" "$package_dir/portable-lean-toolchain/lean"
-rsync -a --exclude='.git' "$mathlib_dir/" "$package_dir/portable-lean-toolchain/mathlib/"
+# Exclude only Mathlib's top-level clone history. Lake needs each locked
+# dependency's .git metadata to validate it without attempting a network clone.
+rsync -a --exclude='/.git' "$mathlib_dir/" "$package_dir/portable-lean-toolchain/mathlib/"
 printf '%s\n' "$MATHLIB_COMMIT" > "$package_dir/portable-lean-toolchain/MATHLIB_COMMIT"
 cp "$repo_root/scripts/verify-and-reconstruct.sh" "$package_dir/portable-lean-toolchain/verify-and-reconstruct.sh"
 chmod +x "$package_dir/portable-lean-toolchain/verify-and-reconstruct.sh"
@@ -144,7 +146,8 @@ done < <(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.ta
 reassembled_sha256="$(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.tar.zst.part-*' -print0 | sort -z | xargs -0 cat | sha256sum | cut -d' ' -f1)"
 [[ "$reassembled_sha256" == "$archive_sha256" ]] || { echo 'reassembled archive SHA-256 mismatch' >&2; exit 1; }
 
-docker pull ubuntu:24.04 > "$logs_dir/docker-image.log" 2>&1
+docker build --tag lean-toolchain-offline-verifier \
+  --file "$repo_root/scripts/offline-verifier.Dockerfile" "$repo_root" > "$logs_dir/docker-image.log" 2>&1
 : > "$out_dir/offline.ndjson"
 for number in 1 2; do
   reconstruction="$work_root/offline-$number"
@@ -157,10 +160,10 @@ for number in 1 2; do
   [[ "$tree_sha256" == "$workspace_tree_sha256" ]] || { echo "offline-$number tree mismatch" >&2; exit 1; }
 
   set +e
-  docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib ubuntu:24.04 \
+  docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
     bash -c 'export PATH=/portable/lean/bin:/usr/bin:/bin; lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
   offline_build_exit=$?
-  docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib ubuntu:24.04 \
+  docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
     bash -c 'export PATH=/portable/lean/bin:/usr/bin:/bin; lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
   offline_smoke_exit=$?
   set -e
