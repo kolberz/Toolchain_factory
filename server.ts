@@ -39,7 +39,7 @@ async function startServer() {
     res.json({
       ...evaluation,
       loadError,
-      target: 'P AND T AND E AND O_1 AND O_2 derived from GitHub Actions evidence',
+      target: 'P AND T AND E AND O_1 AND O_2 AND R derived from GitHub Actions evidence',
       trustBoundary: 'The browser cannot assign predicates. The server reads a workflow-produced evidence file.',
       automaticInvalidationRule: 'Any missing, malformed, or mismatched dependency makes its predicate false.'
     });
@@ -58,7 +58,7 @@ async function startServer() {
   app.post('/api/certification/evaluate', (_req, res) => {
     res.status(405).json({
       error: 'CLIENT_PREDICATE_ASSIGNMENT_REJECTED',
-      message: 'P, T, E, O_1, and O_2 are derived only from the server-owned workflow evidence file.',
+      message: 'P, T, E, O_1, O_2, and R are derived only from the server-owned workflow evidence file.',
       statusEndpoint: '/api/certification/status'
     });
   });
@@ -86,17 +86,12 @@ async function startServer() {
   app.get('/api/toolchain/bootstrap', (_req, res) => {
     res.json({
       service: 'Portable Lean Toolchain GitHub Actions Contract',
-      version: '2.1.0',
+      version: '3.0.0',
       workflow: '.github/workflows/build-portable-toolchain.yml',
       buildScript: 'scripts/build-portable-toolchain.sh',
-      artifactNames: [
+      artifactNamePattern: [
         'portable-lean-toolchain-transport-index',
-        'portable-lean-toolchain-part-000',
-        'portable-lean-toolchain-part-001',
-        'portable-lean-toolchain-part-002',
-        'portable-lean-toolchain-part-003',
-        'portable-lean-toolchain-part-004',
-        'portable-lean-toolchain-part-005',
+        'portable-lean-toolchain-part-NNN (derived from part-sha256sums.txt)',
         'portable-lean-toolchain-verification'
       ],
       acquisitionScript: 'scripts/download-actions-artifacts.sh',

@@ -1,0 +1,85 @@
+name: Rehydrate certified release for connectors
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Certified release tag; leave blank to use the latest release
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+jobs:
+  rehydrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - name: Resolve and download the durable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          tag="$REQUESTED_TAG"
+          if [[ -z "$tag" ]]; then
+            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir hydrated
+          printf '%s\n' "$tag" > hydrated/REHYDRATED-TAG.txt
+      - name: Verify every durable release asset
+        run: |
+          cd hydrated
+          sha256sum --check --strict ARTIFACT-SHA256SUMS.txt
+      - name: Stage connector layouts
+        run: |
+          mkdir -p hydrated/index hydrated/verification
+          cp hydrated/part-sha256sums.txt \
+            hydrated/toolchain-manifest.json \
+            hydrated/toolchain-manifest.json.sha256 \
+            hydrated/download-actions-artifacts.sh \
+            hydrated/verify-and-reconstruct.sh \
+            hydrated/REHYDRATED-TAG.txt \
+            hydrated/index/
+          unzip -q hydrated/portable-lean-toolchain-verification.zip -d hydrated/verification
+      - name: Upload transport index
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-lean-toolchain-transport-index
+          path: hydrated/index/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Upload every release part independently
+        run: node scripts/upload-artifact-parts.mjs hydrated hydrated/rehydrated-parts.json
+      - name: Upload certified verification evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-lean-toolchain-verification
+          path: hydrated/verification/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Attest the rehydrated release manifest
+        uses: actions/attest@v4
+        with:
+          subject-path: hydrated/toolchain-manifest.json
+      - name: Publish rehydration receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-lean-toolchain-rehydration-receipt
+          path: |
+            hydrated/REHYDRATED-TAG.txt
+            hydrated/rehydrated-parts.json
+            hydrated/ARTIFACT-SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90

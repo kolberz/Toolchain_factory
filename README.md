@@ -19,13 +19,14 @@ The workflow downloads the official release, verifies both its full 64-character
 The final predicate is:
 
 ```text
-C_final = P AND T AND E AND O_1 AND O_2
+C_final = P AND T AND E AND O_1 AND O_2 AND R
 ```
 
 - `P`: the release, toolchain, Mathlib tag, and Mathlib commit match the canonical anchors above.
 - `T`: every generated archive part has a valid SHA-256, checksum verification exits zero, the reassembled archive hash matches, and every part is strictly smaller than 450 MiB.
 - `E`: the workflow executes the server-owned gates with their expected outcomes. Positive gates must exit zero; the deliberately invalid theorem must exit nonzero.
 - `O_1` and `O_2`: two separate extraction roots reproduce the packaged tree hash and run `lake build` plus `lake env lean MathlibSmoke.lean` in separate Docker containers using `--network none`. The verifier image and its Git executable are prepared before isolation; locked dependency Git metadata is packaged so Lake can validate revisions without cloning.
+- `R`: two independent Ubuntu builders canonicalize volatile dependency Git metadata and must produce byte-identical archive, workspace-tree, and part-set fingerprints.
 
 The server derives these values from a workflow-produced JSON evidence record. `POST /api/certification/evaluate` rejects client predicate assignment, and the old simulated reconstruction, self-test, and gate-evidence routes no longer return synthetic success.
 
@@ -42,11 +43,12 @@ lake env lean MathlibSmoke.lean
 
 Open **Actions → Build portable Lean toolchain → Run workflow**. The workflow is also triggered when its build inputs land on `main`.
 
-The successful run uploads connector-sized GitHub Actions artifacts:
+The successful run uses two independent builders, evaluates their fingerprints, and then uploads connector-sized GitHub Actions artifacts:
 
 - `portable-lean-toolchain-transport-index`: part checksums, the manifest, and acquisition/reconstruction helpers.
-- `portable-lean-toolchain-part-000` through `portable-lean-toolchain-part-005`: one payload part per artifact. Only generated parts are uploaded.
+- `portable-lean-toolchain-part-NNN`: one payload part per artifact, discovered and uploaded dynamically from `part-sha256sums.txt` rather than a fixed slot list.
 - `portable-lean-toolchain-verification`: the content-addressed certificate, manifest checksums, tree inventories, summary, and complete command logs.
+- `portable-lean-toolchain-consumer-receipt`: proof that a downstream job downloaded the actual wrappers, verified and reconstructed them, then ran `lake build` and the smoke test using `--network none`.
 
 GitHub wraps each artifact in a download ZIP. A single Actions artifact containing all parts would be about 2.45 GB and exceeds the 512 MiB binary-download limit of some connectors. Fan-out keeps every wrapper independently downloadable: each uncompressed payload part is less than 450 MiB, and `compression-level: 0` avoids expensive recompression.
 
@@ -69,7 +71,7 @@ lake build
 lake env lean MathlibSmoke.lean
 ```
 
-The acquisition helper refuses a non-successful workflow run and verifies the part hashes after download. The reconstruction helper refuses missing parts, checksum mismatches, oversized parts, and a pre-existing destination.
+The acquisition helper refuses a non-successful workflow run and verifies the part hashes after download. The reconstruction helper refuses missing parts, checksum mismatches, oversized parts, and a pre-existing destination. If Actions retention has expired, run **Actions → Rehydrate certified release for connectors**. That workflow verifies every durable release asset before recreating the connector-sized artifacts; it does not rebuild or silently recertify the payload.
 
 ## Evidence API
 
@@ -99,10 +101,10 @@ npm test
 npm run build
 ```
 
-The tests include six independent evidence mutations: corrupt part hash, oversized part, substituted executable digest, falsified expected-failure outcome, stale reconstruction ID, and mismatched reconstruction tree. Each mutation must prevent final certification.
+The tests include independent evidence mutations covering corrupt part hashes, oversized parts, substituted executables, falsified expected-failure outcomes, stale reconstruction IDs, mismatched reconstruction trees, and cross-builder disagreement. Each mutation must prevent final certification.
 
 ## Trust boundary
 
-GitHub Actions is the privileged build-and-download bridge. The certificate records the repository commit, workflow run, upstream anchors, executable digests, part digests and sizes, command definitions and exit codes, log digests, tree digest, and independent reconstruction IDs. GitHub retains the uploaded content-addressed artifacts; the application keeps no mutable in-memory certification state.
+GitHub Actions is the privileged build-and-download bridge. The certificate records the repository commit, workflow run, upstream anchors, executable digests, part digests and sizes, command definitions and exit codes, log digests, tree digest, independent reconstruction IDs, and two independent builder fingerprints. The workflow evaluates the actual finalized evidence, downloads its own uploaded artifacts as a consumer, and creates Sigstore-backed GitHub artifact attestations for the manifest, certificate, and consumer receipt. GitHub retains the uploaded content-addressed artifacts; the application keeps no mutable in-memory certification state.
 
-This is evidence-based certification, not a signature scheme. Consumers must obtain artifacts from the expected GitHub repository/run, verify the provided SHA-256 files, and apply their own GitHub identity and retention policy requirements.
+Consumers must obtain artifacts from the expected GitHub repository/run, verify the provided SHA-256 files, and verify provenance with `gh attestation verify FILE -R kolberz/Toolchain_factory`. Attestations bind artifacts to the workflow identity and commit; they do not replace review of the build instructions or theorem trust model.
