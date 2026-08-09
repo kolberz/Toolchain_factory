@@ -126,6 +126,11 @@ archive_bytes="$(stat --format='%s' "$archive")"
 
 split --bytes="$SPLIT_BYTES" --numeric-suffixes=0 --suffix-length=3 \
   "$archive" "$parts_dir/portable-lean-toolchain.tar.zst.part-"
+mapfile -t generated_parts < <(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.tar.zst.part-*' | sort)
+(( ${#generated_parts[@]} > 0 && ${#generated_parts[@]} <= 6 )) || {
+  echo "connector transport supports 1-6 archive parts; generated ${#generated_parts[@]}" >&2
+  exit 1
+}
 (
   cd "$parts_dir"
   sha256sum portable-lean-toolchain.tar.zst.part-* > part-sha256sums.txt
