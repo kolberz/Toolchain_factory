@@ -56,7 +56,7 @@ From a checkout with an authenticated GitHub CLI, acquire a successful run by ID
 bash scripts/download-actions-artifacts.sh RUN_ID ./toolchain-download
 ```
 
-In a connector-only environment, download `portable-lean-toolchain-transport-index`, each `portable-lean-toolchain-part-NNN` named by `part-sha256sums.txt`, and `portable-lean-toolchain-verification` individually. Extract them into one directory. This route uses Actions artifacts rather than release assets because some connectors expose release-asset metadata but no release-asset binary download operation.
+In a connector-only environment, download `portable-lean-toolchain-transport-index`, each `portable-lean-toolchain-part-NNN` named by `part-sha256sums.txt`, and `portable-lean-toolchain-verification` individually. Extract the index and every part into one directory (put verification logs in a subdirectory if desired). The index is deliberately staged flat so the checksums, helpers, and downloaded parts share the layout expected below. This route uses Actions artifacts rather than release assets because some connectors expose release-asset metadata but no release-asset binary download operation.
 
 After acquiring the individual artifacts, reconstruct with:
 
