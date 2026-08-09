@@ -1459,7 +1459,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     method: 'GET',
                     endpoint: '/api/toolchain/bootstrap',
                     desc: 'Returns the workflow, build script, uploaded artifact names, and certification status endpoint.',
-                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "2.1.0" }`
+                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "3.0.0" }`
                   },
                   {
                     method: 'GET',
@@ -1585,6 +1585,8 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                       <span className="text-purple-400">O_1</span>
                       <span className="text-slate-400 mx-2">\land</span>
                       <span className="text-purple-400">O_2</span>
+                      <span className="text-slate-400 mx-2">\land</span>
+                      <span className="text-cyan-400">R</span>
                       <span className="text-slate-500 font-bold ml-2">\]</span>
                     </div>
 
@@ -1593,6 +1595,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                       <li><span className="text-indigo-400 font-bold mr-2">T =</span> Transport parts independently downloaded & hash-verified</li>
                       <li><span className="text-cyan-400 font-bold mr-2">E =</span> Real Lean + Mathlib + Lake discrimination gates verified</li>
                       <li><span className="text-purple-400 font-bold mr-2">O₁, O₂ =</span> Two fresh offline reconstructions verified</li>
+                      <li><span className="text-cyan-400 font-bold mr-2">R =</span> Two independent builders produced byte-identical artifacts</li>
                     </ul>
                   </div>
                 </div>
@@ -1604,7 +1607,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                 <div className="space-y-1">
                   <p className="font-bold">End-to-End Cold Import Validation Required</p>
                   <p>
-                    The system refuses to emit <code>FINAL VERIFIED</code> until <code>P = T = E = O₁ = O₂ = true</code>. Those predicates are derived from a successful GitHub Actions evidence artifact; the browser cannot assign or simulate them.
+                    The system refuses to emit <code>FINAL VERIFIED</code> until <code>P = T = E = O₁ = O₂ = R = true</code>. Those predicates are derived from a successful GitHub Actions evidence artifact; the browser cannot assign or simulate them.
                   </p>
                 </div>
               </div>

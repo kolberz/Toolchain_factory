@@ -6,12 +6,14 @@ const sha = (character: string) => character.repeat(64);
 
 function validEvidence(): any {
   return {
-    schemaVersion: '2.0.0',
+    schemaVersion: '3.0.0',
     generatedAt: '2026-08-08T00:00:00Z',
+    source: { repository: 'kolberz/Toolchain_factory', commit: 'a'.repeat(40), runId: '12345', runnerImage: 'ubuntu-24.04', builderInstance: '1' },
     anchors: { ...CANONICAL_ANCHORS },
     transport: {
       archiveSha256: sha('a'),
       workspaceTreeSha256: sha('b'),
+      partSetSha256: sha('8'),
       verificationExitCode: 0,
       parts: [
         { filename: 'portable.tar.zst.part-000', sha256: sha('c'), bytes: 440 * 1024 * 1024 },
@@ -34,18 +36,29 @@ function validEvidence(): any {
       smokeExitCode: 0,
       treeSha256: sha('b'),
       logSha256: sha(String(index + 2))
-    }))
+    })),
+    reproducibility: {
+      comparisonExitCode: 0,
+      independentBuilders: 2,
+      builders: ['builder-1', 'builder-2'].map(id => ({
+        id,
+        fingerprintSha256: sha('7'),
+        archiveSha256: sha('a'),
+        workspaceTreeSha256: sha('b'),
+        partSetSha256: sha('8')
+      }))
+    }
   };
 }
 
 test('derives FINAL VERIFIED only from complete workflow evidence', () => {
   const result = evaluateCertificationEvidence(validEvidence());
   assert.equal(result.finalVerified, true);
-  assert.deepEqual(Object.values(result.predicates).map(value => value.value), [true, true, true, true, true]);
+  assert.deepEqual(Object.values(result.predicates).map(value => value.value), [true, true, true, true, true, true]);
 });
 
 test('does not accept predicate booleans as evidence', () => {
-  const result = evaluateCertificationEvidence({ P: true, T: true, E: true, O_1: true, O_2: true });
+  const result = evaluateCertificationEvidence({ P: true, T: true, E: true, O_1: true, O_2: true, R: true });
   assert.equal(result.finalVerified, false);
 });
 
@@ -55,7 +68,8 @@ for (const attack of [
   ['substituted executable', (e: any) => { e.execution.leanExecutableSha256 = 'substituted'; }],
   ['falsified negative exit code', (e: any) => { e.execution.gates.find((g: any) => g.id === 'invalid-theorem').actualExitCode = 0; }],
   ['stale reconstruction ID', (e: any) => { e.offlineReconstructions[1].id = 'offline-1'; }],
-  ['mismatched reconstruction tree', (e: any) => { e.offlineReconstructions[0].treeSha256 = sha('9'); }]
+  ['mismatched reconstruction tree', (e: any) => { e.offlineReconstructions[0].treeSha256 = sha('9'); }],
+  ['cross-builder archive mismatch', (e: any) => { e.reproducibility.builders[1].archiveSha256 = sha('9'); }]
 ] as const) {
   test(`rejects actual evidence mutation: ${attack[0]}`, () => {
     const evidence = validEvidence();

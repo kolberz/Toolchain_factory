@@ -11,6 +11,7 @@ RELEASE_SHA256='5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa
 RELEASE_BYTES='563991635'
 MAX_PART_BYTES=$((450 * 1024 * 1024))
 SPLIT_BYTES=$((440 * 1024 * 1024))
+MAX_PARTS=497
 
 repo_root="${GITHUB_WORKSPACE:-$(pwd)}"
 work_root="${RUNNER_TEMP:-/tmp}/lean-toolchain-factory"
@@ -102,6 +103,8 @@ smoke_exit="$(jq -s -r '.[] | select(.id == "mathlib-smoke") | .actualExitCode' 
   exit 1
 }
 
+bash "$repo_root/scripts/canonicalize-dependency-git.sh" "$mathlib_dir" | tee "$logs_dir/dependency-git-canonicalization.log"
+
 echo "Packaging Lean, Lake, Mathlib sources, dependencies, and compiled cache."
 mkdir -p "$package_dir/portable-lean-toolchain"
 cp -a "$lean_home" "$package_dir/portable-lean-toolchain/lean"
@@ -127,8 +130,8 @@ archive_bytes="$(stat --format='%s' "$archive")"
 split --bytes="$SPLIT_BYTES" --numeric-suffixes=0 --suffix-length=3 \
   "$archive" "$parts_dir/portable-lean-toolchain.tar.zst.part-"
 mapfile -t generated_parts < <(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.tar.zst.part-*' | sort)
-(( ${#generated_parts[@]} > 0 && ${#generated_parts[@]} <= 6 )) || {
-  echo "connector transport supports 1-6 archive parts; generated ${#generated_parts[@]}" >&2
+(( ${#generated_parts[@]} > 0 && ${#generated_parts[@]} <= MAX_PARTS )) || {
+  echo "connector transport supports 1-$MAX_PARTS archive parts; generated ${#generated_parts[@]}" >&2
   exit 1
 }
 (
@@ -150,6 +153,18 @@ done < <(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.ta
 ) | tee "$logs_dir/transport-verification.log"
 reassembled_sha256="$(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean-toolchain.tar.zst.part-*' -print0 | sort -z | xargs -0 cat | sha256sum | cut -d' ' -f1)"
 [[ "$reassembled_sha256" == "$archive_sha256" ]] || { echo 'reassembled archive SHA-256 mismatch' >&2; exit 1; }
+part_set_sha256="$(sha256sum "$parts_dir/part-sha256sums.txt" | cut -d' ' -f1)"
+
+jq -n \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" \
+  --arg mathlibCommit "$MATHLIB_COMMIT" \
+  --arg archiveSha256 "$archive_sha256" \
+  --arg workspaceTreeSha256 "$workspace_tree_sha256" \
+  --arg partSetSha256 "$part_set_sha256" \
+  --argjson archiveBytes "$archive_bytes" \
+  --slurpfile parts "$out_dir/parts.ndjson" \
+  '{schemaVersion:"1.0.0",anchors:{leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
+  > "$out_dir/reproducibility-fingerprint.json"
 
 docker build --tag lean-toolchain-offline-verifier \
   --file "$repo_root/scripts/offline-verifier.Dockerfile" "$repo_root" > "$logs_dir/docker-image.log" 2>&1
@@ -196,14 +211,15 @@ jq -n \
   --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
   --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
   --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
+  --arg partSetSha256 "$part_set_sha256" \
   --arg leanExecutableSha256 "$(sha256sum "$package_dir/portable-lean-toolchain/lean/bin/lean" | cut -d' ' -f1)" \
   --arg lakeExecutableSha256 "$(sha256sum "$package_dir/portable-lean-toolchain/lean/bin/lake" | cut -d' ' -f1)" \
   --slurpfile parts "$out_dir/parts.ndjson" --slurpfile gates "$gates_file" --slurpfile offline "$out_dir/offline.ndjson" \
   '{
-    schemaVersion:"2.0.0", generatedAt:$generatedAt,
-    source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04"},
+    schemaVersion:"3.0.0", generatedAt:$generatedAt,
+    source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},
     anchors:{leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
-    transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,verificationExitCode:0,parts:$parts},
+    transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts},
     execution:{leanExecutableSha256:$leanExecutableSha256,lakeExecutableSha256:$lakeExecutableSha256,gates:$gates},
     offlineReconstructions:$offline
   }' > "$out_dir/certification-evidence.json"
@@ -213,13 +229,14 @@ jq '{schemaVersion,generatedAt,source,anchors,transport}' "$out_dir/certificatio
 sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json.sha256"
 
 {
-  echo 'CERTIFICATION COMPLETE'
+  echo 'BUILDER CERTIFICATION COMPLETE — CROSS-BUILDER COMPARISON PENDING'
   echo "lake build exit code: $lake_build_exit"
   echo "lake env lean MathlibSmoke.lean exit code: $smoke_exit"
   echo "archive SHA-256: $archive_sha256"
   echo "workspace tree SHA-256: $workspace_tree_sha256"
   echo "parts: $(wc -l < "$out_dir/parts.ndjson")"
   echo 'offline reconstructions: 2 (Docker --network none)'
+  echo "reproducibility fingerprint SHA-256: $(sha256sum "$out_dir/reproducibility-fingerprint.json" | cut -d' ' -f1)"
 } | tee "$out_dir/verification-summary.log"
 
 # Stage the index in a flat directory. GitHub's artifact action otherwise

@@ -12,14 +12,14 @@ interface StatusResponse {
   status: string;
   formula: string;
   finalVerified: boolean;
-  predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2', Predicate>;
+  predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R', Predicate>;
   evidenceSha256: string | null;
   evidenceSource: string;
   generatedAt: string | null;
   loadError?: string | null;
 }
 
-const predicateOrder: Array<'P' | 'T' | 'E' | 'O_1' | 'O_2'> = ['P', 'T', 'E', 'O_1', 'O_2'];
+const predicateOrder: Array<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R'> = ['P', 'T', 'E', 'O_1', 'O_2', 'R'];
 
 export const CertificationRunner: React.FC = () => {
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -124,7 +124,7 @@ export const CertificationRunner: React.FC = () => {
 
         {error && <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-xl text-xs text-rose-300">{error}</div>}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           {predicateOrder.map(code => {
             const item = status?.predicates?.[code];
             return (
@@ -145,7 +145,7 @@ export const CertificationRunner: React.FC = () => {
 
         <div className="p-4 bg-slate-950 rounded-xl border border-indigo-500/30 text-center font-mono text-xs">
           <span className={status?.finalVerified ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-            {status?.formula || 'C_final = P ∧ T ∧ E ∧ O₁ ∧ O₂ = false'}
+            {status?.formula || 'C_final = P ∧ T ∧ E ∧ O₁ ∧ O₂ ∧ R = false'}
           </span>
           {status?.evidenceSha256 && <div className="mt-2 text-[10px] text-slate-500 break-all">Evidence SHA-256: {status.evidenceSha256}</div>}
         </div>

@@ -1,4 +1,4 @@
-name: Build portable Lean toolchain
+name: Build reproducible portable Lean toolchain
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/build-portable-toolchain.yml'
+      - '.github/workflows/rehydrate-certified-release.yml'
       - 'scripts/**'
       - 'MathlibSmoke.lean'
       - 'InvalidTheorem.lean'
@@ -14,16 +15,19 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  attestations: write
+  id-token: write
 
 jobs:
   app-verifier-tests:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: '22'
-          cache: npm
+          node-version: '24'
+          package-manager-cache: false
       - run: npm ci
       - run: npm run lint
       - run: npm test
@@ -33,82 +37,57 @@ jobs:
     needs: app-verifier-tests
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: [1, 2]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install packaging prerequisites
         run: sudo apt-get update && sudo apt-get install --yes jq rsync zstd
       - name: Build and certify portable Lean + Lake + Mathlib
+        env:
+          BUILDER_INSTANCE: ${{ matrix.builder }}
         run: bash scripts/build-portable-toolchain.sh
+      - name: Upload deterministic builder fingerprint
+        uses: actions/upload-artifact@v7
+        with:
+          name: reproducibility-fingerprint-${{ matrix.builder }}
+          path: |
+            out/reproducibility-fingerprint.json
+            out/workspace-tree-sha256sums.txt
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Set up Node for primary artifact publishing
+        if: matrix.builder == 1
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install primary artifact publisher
+        if: matrix.builder == 1
+        run: npm ci
       - name: Upload transport index
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: matrix.builder == 1
+        uses: actions/upload-artifact@v7
         with:
           name: portable-lean-toolchain-transport-index
           path: out/transport-index/
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 6
-          retention-days: 30
-      # Keep each wrapper below connector download limits. The build script rejects
-      # more than six parts, so these slots cover every generated payload part.
-      - name: Upload archive part 000
-        if: always()
-        uses: actions/upload-artifact@v4
+          retention-days: 90
+      - name: Upload every runtime-discovered archive part independently
+        if: matrix.builder == 1
+        uses: ./
         with:
-          name: portable-lean-toolchain-part-000
-          path: out/parts/portable-lean-toolchain.tar.zst.part-000
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload archive part 001
-        if: always()
-        uses: actions/upload-artifact@v4
+          parts_directory: out/parts
+          output_json: out/uploaded-parts.json
+      - name: Upload primary evidence for cross-builder finalization
+        if: matrix.builder == 1
+        uses: actions/upload-artifact@v7
         with:
-          name: portable-lean-toolchain-part-001
-          path: out/parts/portable-lean-toolchain.tar.zst.part-001
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload archive part 002
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: portable-lean-toolchain-part-002
-          path: out/parts/portable-lean-toolchain.tar.zst.part-002
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload archive part 003
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: portable-lean-toolchain-part-003
-          path: out/parts/portable-lean-toolchain.tar.zst.part-003
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload archive part 004
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: portable-lean-toolchain-part-004
-          path: out/parts/portable-lean-toolchain.tar.zst.part-004
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload archive part 005
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: portable-lean-toolchain-part-005
-          path: out/parts/portable-lean-toolchain.tar.zst.part-005
-          if-no-files-found: ignore
-          compression-level: 0
-          retention-days: 30
-      - name: Upload checksums, certificate, and complete verification logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: portable-lean-toolchain-verification
+          name: builder-1-verification-preliminary
           path: |
             out/certification-evidence.json
             out/certification-evidence.json.sha256
@@ -116,8 +95,167 @@ jobs:
             out/toolchain-manifest.json.sha256
             out/workspace-tree-sha256sums.txt
             out/offline-*-tree-sha256sums.txt
+            out/reproducibility-fingerprint.json
+            out/uploaded-parts.json
             out/verification-summary.log
             out/logs/**
-          if-no-files-found: warn
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
+      - name: Attest the payload manifest
+        if: matrix.builder == 1
+        uses: actions/attest@v4
+        with:
+          subject-path: out/toolchain-manifest.json
+      - name: Upload failed-builder diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: builder-${{ matrix.builder }}-failure-diagnostics
+          path: out/
+          if-no-files-found: ignore
+          compression-level: 6
+          retention-days: 14
+
+  compare-reproducibility:
+    needs: build-and-certify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: reproducibility-fingerprint-1
+          path: fingerprints/builder-1
+      - uses: actions/download-artifact@v8
+        with:
+          name: reproducibility-fingerprint-2
+          path: fingerprints/builder-2
+      - uses: actions/download-artifact@v8
+        with:
+          name: builder-1-verification-preliminary
+          path: final-verification
+      - name: Write per-file reproducibility diagnostics
+        run: |
+          set +e
+          diff --unified=3 \
+            fingerprints/builder-1/workspace-tree-sha256sums.txt \
+            fingerprints/builder-2/workspace-tree-sha256sums.txt \
+            > final-verification/reproducibility-file-diff.txt
+          diff_exit=$?
+          set -e
+          (( diff_exit <= 1 )) || exit "$diff_exit"
+      - name: Require identical builder fingerprints
+        run: >-
+          npx tsx scripts/finalize-reproducibility.ts
+          final-verification/certification-evidence.json
+          fingerprints/builder-1/reproducibility-fingerprint.json
+          fingerprints/builder-2/reproducibility-fingerprint.json
+      - name: Upload reproducibility failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reproducibility-failure-diagnostics
+          path: |
+            fingerprints/
+            final-verification/reproducibility-file-diff.txt
+          if-no-files-found: error
           compression-level: 6
           retention-days: 30
+      - name: Evaluate the actual finalized evidence
+        run: >-
+          npx tsx scripts/evaluate-evidence.ts
+          final-verification/certification-evidence.json
+          final-verification/certification-verdict.json
+      - name: Content-address finalized evidence and verdict
+        run: |
+          sha256sum final-verification/certification-evidence.json > final-verification/certification-evidence.json.sha256
+          sha256sum final-verification/certification-verdict.json > final-verification/certification-verdict.json.sha256
+          {
+            echo 'cross-builder byte reproducibility: VERIFIED'
+            echo "final evidence SHA-256: $(sha256sum final-verification/certification-evidence.json | cut -d' ' -f1)"
+          } | tee -a final-verification/verification-summary.log
+      - name: Upload finalized certificate and complete verification logs
+        uses: actions/upload-artifact@v7
+        with:
+          name: portable-lean-toolchain-verification
+          path: final-verification/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Attest the finalized certification evidence
+        uses: actions/attest@v4
+        with:
+          subject-path: final-verification/certification-evidence.json
+
+  consume-uploaded-artifacts:
+    needs: compare-reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - name: Install consumer prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes jq zstd
+      - uses: actions/download-artifact@v8
+        with:
+          name: portable-lean-toolchain-transport-index
+          path: consumer
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: portable-lean-toolchain-part-*
+          path: consumer
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: portable-lean-toolchain-verification
+          path: consumer/verification
+      - name: Verify and reconstruct the uploaded connector artifacts
+        run: |
+          chmod +x consumer/verify-and-reconstruct.sh
+          bash consumer/verify-and-reconstruct.sh consumer consumer/reconstructed
+      - name: Execute the downloaded toolchain with no network
+        run: |
+          docker build --tag lean-toolchain-consumer-verifier --file scripts/offline-verifier.Dockerfile .
+          docker run --rm --network none \
+            -v "$PWD/consumer/reconstructed/portable-lean-toolchain:/portable" \
+            -w /portable/mathlib lean-toolchain-consumer-verifier \
+            bash -c 'git config --global --add safe.directory "*"; export PATH=/portable/lean/bin:/usr/bin:/bin; lake build'
+          docker run --rm --network none \
+            -v "$PWD/consumer/reconstructed/portable-lean-toolchain:/portable" \
+            -w /portable/mathlib lean-toolchain-consumer-verifier \
+            bash -c 'git config --global --add safe.directory "*"; export PATH=/portable/lean/bin:/usr/bin:/bin; lake env lean MathlibSmoke.lean'
+      - name: Re-evaluate downloaded evidence
+        run: >-
+          npx tsx scripts/evaluate-evidence.ts
+          consumer/verification/certification-evidence.json
+          consumer/consumer-evidence-verdict.json
+      - name: Write consumer receipt
+        run: |
+          jq -n \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg commit "$GITHUB_SHA" \
+            --arg evidenceSha256 "$(sha256sum consumer/verification/certification-evidence.json | cut -d' ' -f1)" \
+            '{schemaVersion:"1.0.0",runId:$runId,commit:$commit,artifactDownload:true,partChecksumVerificationExitCode:0,reconstructionExitCode:0,networkMode:"none",lakeBuildExitCode:0,smokeExitCode:0,evidenceSha256:$evidenceSha256}' \
+            > consumer/consumer-receipt.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: portable-lean-toolchain-consumer-receipt
+          path: |
+            consumer/consumer-receipt.json
+            consumer/consumer-evidence-verdict.json
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Attest the post-upload consumer receipt
+        uses: actions/attest@v4
+        with:
+          subject-path: consumer/consumer-receipt.json

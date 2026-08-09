@@ -36,7 +36,7 @@ export interface CertificationEvaluation {
   status: string;
   formula: string;
   finalVerified: boolean;
-  predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2', PredicateResult>;
+  predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R', PredicateResult>;
   canonicalAnchors: typeof CANONICAL_ANCHORS;
   evidenceSha256: string | null;
   evidenceSource: string;
@@ -67,14 +67,15 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
     const pending = (name: string) => predicate(name, ['No workflow evidence has been loaded.'], true);
     return {
       status: 'PENDING — GITHUB ACTIONS EVIDENCE NOT LOADED',
-      formula: 'C_final = P AND T AND E AND O_1 AND O_2 = false',
+      formula: 'C_final = P AND T AND E AND O_1 AND O_2 AND R = false',
       finalVerified: false,
       predicates: {
         P: pending('official provenance anchors verified'),
         T: pending('archive parts hash-verified and bounded below 450 MiB'),
         E: pending('real Lean, Lake, Mathlib, tactic, and negative gates executed'),
         O_1: pending('network-isolated reconstruction #1 executed'),
-        O_2: pending('network-isolated reconstruction #2 executed')
+        O_2: pending('network-isolated reconstruction #2 executed'),
+        R: pending('two independent builders produced identical bytes')
       },
       canonicalAnchors: CANONICAL_ANCHORS,
       evidenceSha256: null,
@@ -84,6 +85,12 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
   }
 
   const provenanceReasons: string[] = [];
+  if (get(evidence, ['schemaVersion']) !== '3.0.0') provenanceReasons.push('Evidence schemaVersion must be 3.0.0.');
+  if (get(evidence, ['source', 'repository']) !== 'kolberz/Toolchain_factory') provenanceReasons.push('Evidence repository identity is invalid.');
+  if (!/^[0-9a-f]{40}$/.test(String(get(evidence, ['source', 'commit']) || ''))) provenanceReasons.push('Evidence commit SHA is invalid.');
+  if (!/^[0-9]+$/.test(String(get(evidence, ['source', 'runId']) || ''))) provenanceReasons.push('Evidence workflow run ID is invalid.');
+  if (get(evidence, ['source', 'runnerImage']) !== 'ubuntu-24.04') provenanceReasons.push('Evidence runner image is invalid.');
+  if (String(get(evidence, ['source', 'builderInstance'])) !== '1') provenanceReasons.push('Final evidence must originate from primary builder 1.');
   const anchors = get(evidence, ['anchors']) as any;
   for (const [key, expected] of Object.entries(CANONICAL_ANCHORS)) {
     if (anchors?.[key] !== expected) provenanceReasons.push(`${key} does not match the canonical anchor.`);
@@ -106,6 +113,7 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
   }
   if (!isSha256(get(evidence, ['transport', 'archiveSha256']))) transportReasons.push('Archive SHA-256 is missing or invalid.');
   if (!isSha256(get(evidence, ['transport', 'workspaceTreeSha256']))) transportReasons.push('Workspace tree SHA-256 is missing or invalid.');
+  if (!isSha256(get(evidence, ['transport', 'partSetSha256']))) transportReasons.push('Part-set SHA-256 is missing or invalid.');
   if (get(evidence, ['transport', 'verificationExitCode']) !== 0) transportReasons.push('Transport checksum verification did not exit 0.');
 
   const executionReasons: string[] = [];
@@ -145,19 +153,41 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
     return reasons;
   };
 
+  const reproducibilityReasons: string[] = [];
+  const reproducibility = get(evidence, ['reproducibility']) as any;
+  const builders = reproducibility?.builders;
+  if (reproducibility?.comparisonExitCode !== 0) reproducibilityReasons.push('Independent builder comparison did not exit 0.');
+  if (reproducibility?.independentBuilders !== 2 || !Array.isArray(builders) || builders.length !== 2) {
+    reproducibilityReasons.push('Exactly two independent builder fingerprints are required.');
+  } else {
+    const ids = new Set(builders.map((builder: any) => builder?.id));
+    if (ids.size !== 2 || !ids.has('builder-1') || !ids.has('builder-2')) reproducibilityReasons.push('Builder IDs must be exactly builder-1 and builder-2.');
+    for (const builder of builders) {
+      if (!isSha256(builder?.fingerprintSha256)) reproducibilityReasons.push(`Builder ${builder?.id || '<unknown>'} fingerprint SHA-256 is invalid.`);
+      if (builder?.archiveSha256 !== get(evidence, ['transport', 'archiveSha256'])) reproducibilityReasons.push(`Builder ${builder?.id || '<unknown>'} archive SHA-256 differs from the certified transport.`);
+      if (builder?.workspaceTreeSha256 !== get(evidence, ['transport', 'workspaceTreeSha256'])) reproducibilityReasons.push(`Builder ${builder?.id || '<unknown>'} workspace tree SHA-256 differs from the certified transport.`);
+      if (!isSha256(builder?.partSetSha256)) reproducibilityReasons.push(`Builder ${builder?.id || '<unknown>'} part-set SHA-256 is invalid.`);
+      if (builder?.partSetSha256 !== get(evidence, ['transport', 'partSetSha256'])) reproducibilityReasons.push(`Builder ${builder?.id || '<unknown>'} part-set SHA-256 differs from the certified transport.`);
+    }
+    for (const field of ['fingerprintSha256', 'archiveSha256', 'workspaceTreeSha256', 'partSetSha256']) {
+      if (builders[0]?.[field] !== builders[1]?.[field]) reproducibilityReasons.push(`Independent builders disagree on ${field}.`);
+    }
+  }
+
   const predicates = {
     P: predicate('official provenance anchors verified', provenanceReasons),
     T: predicate('archive parts hash-verified and bounded below 450 MiB', transportReasons),
     E: predicate('real Lean, Lake, Mathlib, tactic, and negative gates executed', executionReasons),
     O_1: predicate('network-isolated reconstruction #1 executed', offlineReasons(0)),
-    O_2: predicate('network-isolated reconstruction #2 executed', offlineReasons(1))
+    O_2: predicate('network-isolated reconstruction #2 executed', offlineReasons(1)),
+    R: predicate('two independent builders produced identical bytes', reproducibilityReasons)
   };
   const finalVerified = Object.values(predicates).every(item => item.value);
   const evidenceSha256 = createHash('sha256').update(JSON.stringify(evidence)).digest('hex');
 
   return {
     status: finalVerified ? 'FINAL VERIFIED — WORKFLOW EVIDENCE VALIDATED' : 'REJECTED — WORKFLOW EVIDENCE INCOMPLETE OR INVALID',
-    formula: `C_final = ${predicates.P.value} AND ${predicates.T.value} AND ${predicates.E.value} AND ${predicates.O_1.value} AND ${predicates.O_2.value} = ${finalVerified}`,
+    formula: `C_final = ${predicates.P.value} AND ${predicates.T.value} AND ${predicates.E.value} AND ${predicates.O_1.value} AND ${predicates.O_2.value} AND ${predicates.R.value} = ${finalVerified}`,
     finalVerified,
     predicates,
     canonicalAnchors: CANONICAL_ANCHORS,
