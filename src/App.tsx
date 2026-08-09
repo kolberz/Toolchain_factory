@@ -1459,7 +1459,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     method: 'GET',
                     endpoint: '/api/toolchain/bootstrap',
                     desc: 'Returns the workflow, build script, uploaded artifact names, and certification status endpoint.',
-                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "2.0.0" }`
+                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "2.1.0" }`
                   },
                   {
                     method: 'GET',

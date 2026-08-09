@@ -42,14 +42,23 @@ lake env lean MathlibSmoke.lean
 
 Open **Actions → Build portable Lean toolchain → Run workflow**. The workflow is also triggered when its build inputs land on `main`.
 
-The successful run uploads two GitHub Actions artifacts:
+The successful run uploads connector-sized GitHub Actions artifacts:
 
-- `portable-lean-toolchain-parts`: every split archive part, part checksums, the manifest, and the reconstruction helper.
+- `portable-lean-toolchain-transport-index`: part checksums, the manifest, and acquisition/reconstruction helpers.
+- `portable-lean-toolchain-part-000` through `portable-lean-toolchain-part-005`: one payload part per artifact. Only generated parts are uploaded.
 - `portable-lean-toolchain-verification`: the content-addressed certificate, manifest checksums, tree inventories, summary, and complete command logs.
 
-GitHub wraps each artifact in a download ZIP. The actual portable payload inside the first artifact is a multipart `tar.zst`; each payload part is less than 450 MiB.
+GitHub wraps each artifact in a download ZIP. A single Actions artifact containing all parts would be about 2.45 GB and exceeds the 512 MiB binary-download limit of some connectors. Fan-out keeps every wrapper independently downloadable: each uncompressed payload part is less than 450 MiB, and `compression-level: 0` avoids expensive recompression.
 
-After downloading and unzipping `portable-lean-toolchain-parts`, reconstruct with:
+From a checkout with an authenticated GitHub CLI, acquire a successful run by ID and verify all downloaded parts:
+
+```bash
+bash scripts/download-actions-artifacts.sh RUN_ID ./toolchain-download
+```
+
+In a connector-only environment, download `portable-lean-toolchain-transport-index`, each `portable-lean-toolchain-part-NNN` named by `part-sha256sums.txt`, and `portable-lean-toolchain-verification` individually. Extract them into one directory. This route uses Actions artifacts rather than release assets because some connectors expose release-asset metadata but no release-asset binary download operation.
+
+After acquiring the individual artifacts, reconstruct with:
 
 ```bash
 chmod +x verify-and-reconstruct.sh
@@ -60,7 +69,7 @@ lake build
 lake env lean MathlibSmoke.lean
 ```
 
-The helper refuses missing parts, checksum mismatches, oversized parts, and a pre-existing destination.
+The acquisition helper refuses a non-successful workflow run and verifies the part hashes after download. The reconstruction helper refuses missing parts, checksum mismatches, oversized parts, and a pre-existing destination.
 
 ## Evidence API
 

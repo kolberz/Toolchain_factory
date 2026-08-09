@@ -39,18 +39,74 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes jq rsync zstd
       - name: Build and certify portable Lean + Lake + Mathlib
         run: bash scripts/build-portable-toolchain.sh
-      - name: Upload every archive part
+      - name: Upload transport index
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: portable-lean-toolchain-parts
+          name: portable-lean-toolchain-transport-index
           path: |
-            out/parts/portable-lean-toolchain.tar.zst.part-*
             out/parts/part-sha256sums.txt
             out/toolchain-manifest.json
             out/toolchain-manifest.json.sha256
+            scripts/download-actions-artifacts.sh
             scripts/verify-and-reconstruct.sh
           if-no-files-found: warn
+          compression-level: 6
+          retention-days: 30
+      # Keep each wrapper below connector download limits. The build script rejects
+      # more than six parts, so these slots cover every generated payload part.
+      - name: Upload archive part 000
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-000
+          path: out/parts/portable-lean-toolchain.tar.zst.part-000
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Upload archive part 001
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-001
+          path: out/parts/portable-lean-toolchain.tar.zst.part-001
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Upload archive part 002
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-002
+          path: out/parts/portable-lean-toolchain.tar.zst.part-002
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Upload archive part 003
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-003
+          path: out/parts/portable-lean-toolchain.tar.zst.part-003
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Upload archive part 004
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-004
+          path: out/parts/portable-lean-toolchain.tar.zst.part-004
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 30
+      - name: Upload archive part 005
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-lean-toolchain-part-005
+          path: out/parts/portable-lean-toolchain.tar.zst.part-005
+          if-no-files-found: ignore
           compression-level: 0
           retention-days: 30
       - name: Upload checksums, certificate, and complete verification logs

@@ -86,10 +86,21 @@ async function startServer() {
   app.get('/api/toolchain/bootstrap', (_req, res) => {
     res.json({
       service: 'Portable Lean Toolchain GitHub Actions Contract',
-      version: '2.0.0',
+      version: '2.1.0',
       workflow: '.github/workflows/build-portable-toolchain.yml',
       buildScript: 'scripts/build-portable-toolchain.sh',
-      artifactNames: ['portable-lean-toolchain-parts', 'portable-lean-toolchain-verification'],
+      artifactNames: [
+        'portable-lean-toolchain-transport-index',
+        'portable-lean-toolchain-part-000',
+        'portable-lean-toolchain-part-001',
+        'portable-lean-toolchain-part-002',
+        'portable-lean-toolchain-part-003',
+        'portable-lean-toolchain-part-004',
+        'portable-lean-toolchain-part-005',
+        'portable-lean-toolchain-verification'
+      ],
+      acquisitionScript: 'scripts/download-actions-artifacts.sh',
+      wrapperConstraint: 'Each payload part is uploaded as its own Actions artifact below 450 MiB.',
       certificationStatus: '/api/certification/status',
       statement: 'Build, download, execution, and offline reconstruction occur on the Ubuntu workflow runner, not in the browser.'
     });
