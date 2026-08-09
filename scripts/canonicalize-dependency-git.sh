@@ -16,19 +16,23 @@ while IFS= read -r -d '' git_dir; do
   head="$(git -C "$repository" rev-parse HEAD)"
   origin="$(git -C "$repository" remote get-url origin)"
 
-  # Clone negotiation, reflogs, and the working-tree stat cache vary between
-  # otherwise identical builds. Repack reachable objects deterministically,
+  # Clone negotiation, reflogs, the working-tree stat cache, and the compressed
+  # bytes reused from a server-generated pack vary between otherwise identical
+  # builds. Repack and recompress every reachable object deterministically,
   # discard volatile transport state, and rebuild an index from the HEAD tree
-  # without host inode/mtime data.
+  # without host inode/mtime data. `-f` disables delta reuse; `-F` separately
+  # disables reuse of the existing compressed object representation.
   git -C "$repository" reflog expire --expire=all --all
   rm -rf -- "$git_dir/logs"
   rm -f -- "$git_dir/FETCH_HEAD" "$git_dir/ORIG_HEAD" "$git_dir/index" \
     "$git_dir/objects/info/commit-graph" "$git_dir/objects/pack/multi-pack-index"
   git -C "$repository" \
     -c pack.threads=1 \
+    -c pack.compression=9 \
+    -c core.compression=9 \
     -c pack.writeReverseIndex=false \
     -c repack.writeBitmaps=false \
-    repack -a -d -f --window=0 --depth=0
+    repack -a -d -f -F --window=0 --depth=0
   rm -f -- "$git_dir/objects/pack/"*.rev
   git -C "$repository" prune-packed
 

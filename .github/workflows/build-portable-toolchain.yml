@@ -53,7 +53,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: reproducibility-fingerprint-${{ matrix.builder }}
-          path: out/reproducibility-fingerprint.json
+          path: |
+            out/reproducibility-fingerprint.json
+            out/workspace-tree-sha256sums.txt
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
@@ -137,12 +139,33 @@ jobs:
         with:
           name: builder-1-verification-preliminary
           path: final-verification
+      - name: Write per-file reproducibility diagnostics
+        run: |
+          set +e
+          diff --unified=3 \
+            fingerprints/builder-1/workspace-tree-sha256sums.txt \
+            fingerprints/builder-2/workspace-tree-sha256sums.txt \
+            > final-verification/reproducibility-file-diff.txt
+          diff_exit=$?
+          set -e
+          (( diff_exit <= 1 )) || exit "$diff_exit"
       - name: Require identical builder fingerprints
         run: >-
           npx tsx scripts/finalize-reproducibility.ts
           final-verification/certification-evidence.json
           fingerprints/builder-1/reproducibility-fingerprint.json
           fingerprints/builder-2/reproducibility-fingerprint.json
+      - name: Upload reproducibility failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reproducibility-failure-diagnostics
+          path: |
+            fingerprints/
+            final-verification/reproducibility-file-diff.txt
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 30
       - name: Evaluate the actual finalized evidence
         run: >-
           npx tsx scripts/evaluate-evidence.ts
