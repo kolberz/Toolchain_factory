@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "defaultProfile": "lean-4.32.2",
+  "profiles": {
+    "lean-4.32.2": {
+      "profileId": "lean-4.32.2",
+      "leanVersion": "4.32.2",
+      "leanToolchain": "leanprover/lean4:v4.32.2",
+      "mathlibTag": "v4.32.2",
+      "mathlibCommit": "905b95818eb32af7874a58b427f50c1711a5e96c",
+      "mathlibLakeManifestSha256": "015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd",
+      "releaseArtifact": "lean-4.32.2-linux.tar.zst",
+      "releaseTarballSha256": "5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa",
+      "releaseTarballBytes": 563991635,
+      "architecture": "linux-x86_64"
+    },
+    "lean-4.33.0-rc1": {
+      "profileId": "lean-4.33.0-rc1",
+      "leanVersion": "4.33.0-rc1",
+      "leanToolchain": "leanprover/lean4:v4.33.0-rc1",
+      "mathlibTag": "v4.33.0-rc1",
+      "mathlibCommit": "79d0395a1825a6264ad5d269e35e60537518955e",
+      "mathlibLakeManifestSha256": "29a0c135b3c61e4d045cfc88bf6a8de2f6e6a4ef5cff49c1e305d76324b2fa09",
+      "releaseArtifact": "lean-4.33.0-rc1-linux.tar.zst",
+      "releaseTarballSha256": "25e7b3e18ec75a4e2529fc23194be8e3cc3183df99b553f870d8a111c7488210",
+      "releaseTarballBytes": 574877789,
+      "architecture": "linux-x86_64"
+    }
+  }
+}

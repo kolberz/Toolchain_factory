@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CANONICAL_ANCHORS, GATE_DEFINITIONS, evaluateCertificationEvidence } from '../certification.ts';
+import {
+  CANONICAL_ANCHORS,
+  CANONICAL_PROFILES,
+  DEFAULT_PROFILE_ID,
+  GATE_DEFINITIONS,
+  evaluateCertificationEvidence
+} from '../certification.ts';
 
 const sha = (character: string) => character.repeat(64);
 
-function validEvidence(): any {
+function validEvidence(profileId = DEFAULT_PROFILE_ID): any {
   return {
-    schemaVersion: '3.0.0',
+    schemaVersion: '3.1.0',
     generatedAt: '2026-08-08T00:00:00Z',
     source: { repository: 'kolberz/Toolchain_factory', commit: 'a'.repeat(40), runId: '12345', runnerImage: 'ubuntu-24.04', builderInstance: '1' },
-    anchors: { ...CANONICAL_ANCHORS },
+    anchors: { ...CANONICAL_PROFILES[profileId] },
     transport: {
       archiveSha256: sha('a'),
       workspaceTreeSha256: sha('b'),
@@ -55,6 +61,35 @@ test('derives FINAL VERIFIED only from complete workflow evidence', () => {
   const result = evaluateCertificationEvidence(validEvidence());
   assert.equal(result.finalVerified, true);
   assert.deepEqual(Object.values(result.predicates).map(value => value.value), [true, true, true, true, true, true]);
+});
+
+test('derives FINAL VERIFIED for the exact Lean 4.33.0-rc1 profile', () => {
+  const result = evaluateCertificationEvidence(validEvidence('lean-4.33.0-rc1'));
+  assert.equal(result.finalVerified, true);
+  assert.equal(result.canonicalProfileId, 'lean-4.33.0-rc1');
+  assert.equal(result.canonicalAnchors.leanToolchain, 'leanprover/lean4:v4.33.0-rc1');
+});
+
+test('continues to verify legacy schema 3.0.0 evidence against the 4.32.2 profile', () => {
+  const evidence = validEvidence();
+  evidence.schemaVersion = '3.0.0';
+  delete evidence.anchors.profileId;
+  delete evidence.anchors.leanVersion;
+  const result = evaluateCertificationEvidence(evidence);
+  assert.equal(result.finalVerified, true);
+  assert.equal(result.canonicalProfileId, DEFAULT_PROFILE_ID);
+});
+
+test('rejects mixed-version profile anchors', () => {
+  const evidence = validEvidence('lean-4.33.0-rc1');
+  evidence.anchors.mathlibCommit = CANONICAL_ANCHORS.mathlibCommit;
+  assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
+});
+
+test('rejects a non-allow-listed profile', () => {
+  const evidence = validEvidence('lean-4.33.0-rc1');
+  evidence.anchors.profileId = 'lean-4.33-compatible-ish';
+  assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
 });
 
 test('does not accept predicate booleans as evidence', () => {

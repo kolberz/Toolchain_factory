@@ -13,6 +13,8 @@ interface StatusResponse {
   formula: string;
   finalVerified: boolean;
   predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R', Predicate>;
+  canonicalProfileId: string;
+  canonicalAnchors: { leanToolchain: string; mathlibTag: string };
   evidenceSha256: string | null;
   evidenceSource: string;
   generatedAt: string | null;
@@ -41,6 +43,7 @@ export const CertificationRunner: React.FC = () => {
       const body = await response.json();
       if (!response.ok) throw new Error(body?.message || `Status request failed (${response.status}).`);
       setStatus(body);
+      appendLog(`Canonical profile: ${body.canonicalProfileId} (${body.canonicalAnchors?.leanToolchain}).`);
       appendLog(body.finalVerified
         ? `FINAL VERIFIED from workflow evidence ${body.evidenceSha256}.`
         : `Not certified: ${body.status}. No predicate was assigned by this browser.`);
@@ -94,6 +97,7 @@ export const CertificationRunner: React.FC = () => {
             <div>
               <div className="uppercase text-[10px] tracking-wider text-slate-400">Current verdict</div>
               <div className="text-sm font-bold">{status?.status || 'LOADING EVIDENCE'}</div>
+              {status?.canonicalProfileId && <div className="text-[10px] text-cyan-300">Profile {status.canonicalProfileId}</div>}
               <div className="text-[10px] text-slate-500">{status?.generatedAt ? `Generated ${status.generatedAt}` : 'No successful workflow evidence loaded'}</div>
             </div>
           </div>

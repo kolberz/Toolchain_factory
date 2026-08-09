@@ -5,6 +5,8 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import {
   CANONICAL_ANCHORS,
+  CANONICAL_PROFILES,
+  DEFAULT_PROFILE_ID,
   GATE_DEFINITIONS,
   evaluateCertificationEvidence,
   loadCertificationEvidence
@@ -80,15 +82,18 @@ async function startServer() {
   });
 
   app.get('/api/manifest/anchors', (_req, res) => {
-    res.json({ MANIFEST_ANCHORS: CANONICAL_ANCHORS });
+    res.json({ DEFAULT_PROFILE_ID, MANIFEST_ANCHORS: CANONICAL_ANCHORS, PROFILES: CANONICAL_PROFILES });
   });
 
   app.get('/api/toolchain/bootstrap', (_req, res) => {
     res.json({
       service: 'Portable Lean Toolchain GitHub Actions Contract',
-      version: '3.0.0',
+      version: '3.1.0',
       workflow: '.github/workflows/build-portable-toolchain.yml',
       buildScript: 'scripts/build-portable-toolchain.sh',
+      profileFile: 'toolchain-profiles.json',
+      defaultProfile: DEFAULT_PROFILE_ID,
+      availableProfiles: Object.keys(CANONICAL_PROFILES),
       artifactNamePattern: [
         'portable-lean-toolchain-transport-index',
         'portable-lean-toolchain-part-NNN (derived from part-sha256sums.txt)',
