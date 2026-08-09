@@ -222,4 +222,16 @@ sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json
   echo 'offline reconstructions: 2 (Docker --network none)'
 } | tee "$out_dir/verification-summary.log"
 
+# Stage the index in a flat directory. GitHub's artifact action otherwise
+# preserves the unrelated out/ and scripts/ source paths, which makes a
+# connector download disagree with the reconstruction helper's layout.
+transport_index_dir="$out_dir/transport-index"
+mkdir -p "$transport_index_dir"
+cp "$parts_dir/part-sha256sums.txt" \
+  "$out_dir/toolchain-manifest.json" \
+  "$out_dir/toolchain-manifest.json.sha256" \
+  "$repo_root/scripts/download-actions-artifacts.sh" \
+  "$repo_root/scripts/verify-and-reconstruct.sh" \
+  "$transport_index_dir/"
+
 rm -f "$archive"

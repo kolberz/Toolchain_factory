@@ -44,12 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: portable-lean-toolchain-transport-index
-          path: |
-            out/parts/part-sha256sums.txt
-            out/toolchain-manifest.json
-            out/toolchain-manifest.json.sha256
-            scripts/download-actions-artifacts.sh
-            scripts/verify-and-reconstruct.sh
+          path: out/transport-index/
           if-no-files-found: warn
           compression-level: 6
           retention-days: 30
