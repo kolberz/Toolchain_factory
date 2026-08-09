@@ -1,0 +1,14 @@
+name: Upload portable toolchain parts
+description: Upload every runtime-discovered connector-sized archive part as its own Actions artifact.
+
+inputs:
+  parts_directory:
+    description: Directory containing portable-lean-toolchain.tar.zst.part-NNN files.
+    required: true
+  output_json:
+    description: Path where upload metadata will be written.
+    required: true
+
+runs:
+  using: node24
+  main: scripts/upload-artifact-parts.mjs

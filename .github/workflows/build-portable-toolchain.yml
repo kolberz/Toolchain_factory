@@ -77,7 +77,10 @@ jobs:
           retention-days: 90
       - name: Upload every runtime-discovered archive part independently
         if: matrix.builder == 1
-        run: node scripts/upload-artifact-parts.mjs out/parts out/uploaded-parts.json
+        uses: ./
+        with:
+          parts_directory: out/parts
+          output_json: out/uploaded-parts.json
       - name: Upload primary evidence for cross-builder finalization
         if: matrix.builder == 1
         uses: actions/upload-artifact@v7

@@ -2,9 +2,11 @@ import { DefaultArtifactClient } from '@actions/artifact';
 import { readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const [partsArgument, outputArgument] = process.argv.slice(2);
+const [cliPartsArgument, cliOutputArgument] = process.argv.slice(2);
+const partsArgument = cliPartsArgument || process.env.INPUT_PARTS_DIRECTORY;
+const outputArgument = cliOutputArgument || process.env.INPUT_OUTPUT_JSON;
 if (!partsArgument || !outputArgument) {
-  console.error('usage: node scripts/upload-artifact-parts.mjs PARTS_DIRECTORY OUTPUT_JSON');
+  console.error('Provide PARTS_DIRECTORY and OUTPUT_JSON as CLI arguments or local-action inputs.');
   process.exit(64);
 }
 

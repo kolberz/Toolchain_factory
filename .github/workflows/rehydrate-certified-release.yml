@@ -59,7 +59,10 @@ jobs:
           compression-level: 6
           retention-days: 90
       - name: Upload every release part independently
-        run: node scripts/upload-artifact-parts.mjs hydrated hydrated/rehydrated-parts.json
+        uses: ./
+        with:
+          parts_directory: hydrated
+          output_json: hydrated/rehydrated-parts.json
       - name: Upload certified verification evidence
         uses: actions/upload-artifact@v7
         with:
