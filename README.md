@@ -2,17 +2,30 @@
 
 Toolchain Factory builds a genuine, portable Linux x86-64 Lean 4 + Lake + Mathlib environment on a GitHub-hosted Ubuntu runner. The browser application is an evidence viewer; it does not pretend to download artifacts, run Lean, or assign certification predicates.
 
-## Pinned upstream
+## Exact toolchain profiles
 
-- Lean toolchain: `leanprover/lean4:v4.32.2`
-- Mathlib tag: `v4.32.2`
-- Mathlib commit: `905b95818eb32af7874a58b427f50c1711a5e96c`
-- Mathlib release dependency-lock SHA-256: `015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd`
-- Official Lean release: `lean-4.32.2-linux.tar.zst`
-- Release SHA-256: `5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa`
-- Release size: `563991635` bytes
+The factory does not mix Lean versions or reuse compiled Mathlib artifacts
+across versions. Each build selects one complete, allow-listed profile from
+`toolchain-profiles.json`:
 
-The workflow downloads the official release, verifies both its full 64-character SHA-256 and exact size, clones the exact Mathlib tag, verifies the resolved commit and `lean-toolchain`, runs `lake update`, and obtains Mathlib's compiled cache with `lake exe cache get`. Because dependency default branches can move after a release, the workflow restores and verifies the release's content-addressed `lake-manifest.json` after the required `lake update`, then fetches/builds that locked dependency graph.
+| Profile | Lean + Mathlib | Mathlib commit | Lean archive SHA-256 |
+| --- | --- | --- | --- |
+| `lean-4.32.2` (default) | `v4.32.2` | `905b95818eb32af7874a58b427f50c1711a5e96c` | `5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa` |
+| `lean-4.33.0-rc1` | `v4.33.0-rc1` | `79d0395a1825a6264ad5d269e35e60537518955e` | `25e7b3e18ec75a4e2529fc23194be8e3cc3183df99b553f870d8a111c7488210` |
+
+The rc1 profile exists for projects already pinned to
+`leanprover/lean4:v4.33.0-rc1`; it is a separate toolchain, not a claim that
+4.33 compiled artifacts are backward-compatible with 4.32. The certified
+4.32.2 release remains immutable.
+
+The workflow downloads the selected official release, verifies both its full
+64-character SHA-256 and exact size, clones the exactly matching Mathlib tag,
+verifies the resolved commit, `lean-toolchain`, and release lockfile, runs
+`lake update`, and obtains Mathlib's compiled cache with `lake exe cache get`.
+Because dependency default branches can move after a release, the workflow
+restores and verifies the release's content-addressed `lake-manifest.json`
+after the required `lake update`, then fetches/builds that locked dependency
+graph.
 
 ## Certification model
 
@@ -22,13 +35,13 @@ The final predicate is:
 C_final = P AND T AND E AND O_1 AND O_2 AND R
 ```
 
-- `P`: the release, toolchain, Mathlib tag, and Mathlib commit match the canonical anchors above.
+- `P`: `profileId` selects one complete canonical profile, and every release, toolchain, Mathlib, lockfile, and architecture anchor matches that profile. Mixed-version anchors are rejected.
 - `T`: every generated archive part has a valid SHA-256, checksum verification exits zero, the reassembled archive hash matches, and every part is strictly smaller than 450 MiB.
 - `E`: the workflow executes the server-owned gates with their expected outcomes. Positive gates must exit zero; the deliberately invalid theorem must exit nonzero.
 - `O_1` and `O_2`: two separate extraction roots reproduce the packaged tree hash and run `lake build` plus `lake env lean MathlibSmoke.lean` in separate Docker containers using `--network none`. The verifier image and its Git executable are prepared before isolation; locked dependency Git metadata is packaged so Lake can validate revisions without cloning.
 - `R`: two independent Ubuntu builders canonicalize volatile dependency Git metadata and must produce byte-identical archive, workspace-tree, and part-set fingerprints.
 
-The server derives these values from a workflow-produced JSON evidence record. `POST /api/certification/evaluate` rejects client predicate assignment, and the old simulated reconstruction, self-test, and gate-evidence routes no longer return synthetic success.
+The server derives these values from a workflow-produced JSON evidence record. Schema `3.1.0` binds new evidence to an allow-listed `profileId`; legacy schema `3.0.0` remains valid only for the original `lean-4.32.2` profile. `POST /api/certification/evaluate` rejects client predicate assignment, and the old simulated reconstruction, self-test, and gate-evidence routes no longer return synthetic success.
 
 No code path may emit `FINAL VERIFIED` unless both of these commands have returned exit code `0` in the primary build and in both offline reconstructions:
 
@@ -41,7 +54,7 @@ lake env lean MathlibSmoke.lean
 
 ## Run the factory
 
-Open **Actions → Build portable Lean toolchain → Run workflow**. The workflow is also triggered when its build inputs land on `main`.
+Open **Actions → Build reproducible portable Lean toolchain → Run workflow** and choose `lean-4.32.2` or `lean-4.33.0-rc1`. Pushes to `main` continue to certify the stable default `lean-4.32.2` profile; the rc1 profile is dispatched explicitly so the two evidence streams cannot be confused.
 
 The successful run uses two independent builders, evaluates their fingerprints, and then uploads connector-sized GitHub Actions artifacts:
 

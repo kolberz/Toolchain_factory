@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LEAN_VERSION='4.32.2'
-LEAN_TOOLCHAIN="leanprover/lean4:v${LEAN_VERSION}"
-MATHLIB_TAG='v4.32.2'
-MATHLIB_COMMIT='905b95818eb32af7874a58b427f50c1711a5e96c'
-MATHLIB_LAKE_MANIFEST_SHA256='015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd'
-RELEASE_ARTIFACT="lean-${LEAN_VERSION}-linux.tar.zst"
-RELEASE_SHA256='5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa'
-RELEASE_BYTES='563991635'
 MAX_PART_BYTES=$((450 * 1024 * 1024))
 SPLIT_BYTES=$((440 * 1024 * 1024))
 MAX_PARTS=497
 
 repo_root="${GITHUB_WORKSPACE:-$(pwd)}"
+profiles_file="$repo_root/toolchain-profiles.json"
+profile_id="${TOOLCHAIN_PROFILE:-lean-4.32.2}"
+[[ -f "$profiles_file" ]] || { echo "missing canonical profile file: $profiles_file" >&2; exit 1; }
+profile="$(jq -ce --arg id "$profile_id" '.profiles[$id] // error("unknown toolchain profile: " + $id)' "$profiles_file")"
+[[ "$(jq -r '.profileId' <<< "$profile")" == "$profile_id" ]] || { echo 'profile identity mismatch' >&2; exit 1; }
+
+LEAN_VERSION="$(jq -r '.leanVersion' <<< "$profile")"
+LEAN_TOOLCHAIN="$(jq -r '.leanToolchain' <<< "$profile")"
+MATHLIB_TAG="$(jq -r '.mathlibTag' <<< "$profile")"
+MATHLIB_COMMIT="$(jq -r '.mathlibCommit' <<< "$profile")"
+MATHLIB_LAKE_MANIFEST_SHA256="$(jq -r '.mathlibLakeManifestSha256' <<< "$profile")"
+RELEASE_ARTIFACT="$(jq -r '.releaseArtifact' <<< "$profile")"
+RELEASE_SHA256="$(jq -r '.releaseTarballSha256' <<< "$profile")"
+RELEASE_BYTES="$(jq -r '.releaseTarballBytes' <<< "$profile")"
+
 work_root="${RUNNER_TEMP:-/tmp}/lean-toolchain-factory"
 out_dir="$repo_root/out"
 logs_dir="$out_dir/logs"
@@ -156,6 +163,8 @@ reassembled_sha256="$(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean
 part_set_sha256="$(sha256sum "$parts_dir/part-sha256sums.txt" | cut -d' ' -f1)"
 
 jq -n \
+  --arg profileId "$profile_id" \
+  --arg leanVersion "$LEAN_VERSION" \
   --arg leanToolchain "$LEAN_TOOLCHAIN" \
   --arg mathlibCommit "$MATHLIB_COMMIT" \
   --arg archiveSha256 "$archive_sha256" \
@@ -163,7 +172,7 @@ jq -n \
   --arg partSetSha256 "$part_set_sha256" \
   --argjson archiveBytes "$archive_bytes" \
   --slurpfile parts "$out_dir/parts.ndjson" \
-  '{schemaVersion:"1.0.0",anchors:{leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
+  '{schemaVersion:"1.1.0",anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
   > "$out_dir/reproducibility-fingerprint.json"
 
 docker build --tag lean-toolchain-offline-verifier \
@@ -208,6 +217,8 @@ run_id="${GITHUB_RUN_ID:-local}"
 
 jq -n \
   --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
+  --arg profileId "$profile_id" \
+  --arg leanVersion "$LEAN_VERSION" \
   --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
   --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
   --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
@@ -216,9 +227,9 @@ jq -n \
   --arg lakeExecutableSha256 "$(sha256sum "$package_dir/portable-lean-toolchain/lean/bin/lake" | cut -d' ' -f1)" \
   --slurpfile parts "$out_dir/parts.ndjson" --slurpfile gates "$gates_file" --slurpfile offline "$out_dir/offline.ndjson" \
   '{
-    schemaVersion:"3.0.0", generatedAt:$generatedAt,
+    schemaVersion:"3.1.0", generatedAt:$generatedAt,
     source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},
-    anchors:{leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
+    anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
     transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts},
     execution:{leanExecutableSha256:$leanExecutableSha256,lakeExecutableSha256:$lakeExecutableSha256,gates:$gates},
     offlineReconstructions:$offline
@@ -230,6 +241,7 @@ sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json
 
 {
   echo 'BUILDER CERTIFICATION COMPLETE — CROSS-BUILDER COMPARISON PENDING'
+  echo "toolchain profile: $profile_id"
   echo "lake build exit code: $lake_build_exit"
   echo "lake env lean MathlibSmoke.lean exit code: $smoke_exit"
   echo "archive SHA-256: $archive_sha256"

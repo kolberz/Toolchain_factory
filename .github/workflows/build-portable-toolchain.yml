@@ -1,7 +1,17 @@
 name: Build reproducible portable Lean toolchain
+run-name: Toolchain ${{ inputs.profile || 'lean-4.32.2' }} · ${{ github.ref_name }}
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Exact Lean + Mathlib profile to certify
+        required: true
+        default: lean-4.32.2
+        type: choice
+        options:
+          - lean-4.32.2
+          - lean-4.33.0-rc1
   push:
     branches: [main]
     paths:
@@ -11,7 +21,11 @@ on:
       - 'MathlibSmoke.lean'
       - 'InvalidTheorem.lean'
       - 'certification.ts'
+      - 'toolchain-profiles.json'
       - 'tests/**'
+
+env:
+  TOOLCHAIN_PROFILE: ${{ inputs.profile || 'lean-4.32.2' }}
 
 permissions:
   contents: read
@@ -243,8 +257,9 @@ jobs:
           jq -n \
             --arg runId "$GITHUB_RUN_ID" \
             --arg commit "$GITHUB_SHA" \
+            --arg profileId "$TOOLCHAIN_PROFILE" \
             --arg evidenceSha256 "$(sha256sum consumer/verification/certification-evidence.json | cut -d' ' -f1)" \
-            '{schemaVersion:"1.0.0",runId:$runId,commit:$commit,artifactDownload:true,partChecksumVerificationExitCode:0,reconstructionExitCode:0,networkMode:"none",lakeBuildExitCode:0,smokeExitCode:0,evidenceSha256:$evidenceSha256}' \
+            '{schemaVersion:"1.1.0",runId:$runId,commit:$commit,profileId:$profileId,artifactDownload:true,partChecksumVerificationExitCode:0,reconstructionExitCode:0,networkMode:"none",lakeBuildExitCode:0,smokeExitCode:0,evidenceSha256:$evidenceSha256}' \
             > consumer/consumer-receipt.json
       - uses: actions/upload-artifact@v7
         with:

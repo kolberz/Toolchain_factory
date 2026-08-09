@@ -1,17 +1,28 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import profilesDocument from './toolchain-profiles.json';
 
-export const CANONICAL_ANCHORS = Object.freeze({
-  leanToolchain: 'leanprover/lean4:v4.32.2',
-  mathlibTag: 'v4.32.2',
-  mathlibCommit: '905b95818eb32af7874a58b427f50c1711a5e96c',
-  mathlibLakeManifestSha256: '015c7e00ead0f05f2a72b32d9bdef782d4689d05a6297f0ceb0ab5d196c164bd',
-  releaseArtifact: 'lean-4.32.2-linux.tar.zst',
-  releaseTarballSha256: '5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa',
-  releaseTarballBytes: 563_991_635,
-  architecture: 'linux-x86_64'
-});
+export interface CanonicalAnchors {
+  profileId: string;
+  leanVersion: string;
+  leanToolchain: string;
+  mathlibTag: string;
+  mathlibCommit: string;
+  mathlibLakeManifestSha256: string;
+  releaseArtifact: string;
+  releaseTarballSha256: string;
+  releaseTarballBytes: number;
+  architecture: string;
+}
+
+export const DEFAULT_PROFILE_ID = profilesDocument.defaultProfile;
+export const CANONICAL_PROFILES = Object.freeze(
+  Object.fromEntries(
+    Object.entries(profilesDocument.profiles).map(([id, anchors]) => [id, Object.freeze({ ...anchors })])
+  ) as Record<string, Readonly<CanonicalAnchors>>
+);
+export const CANONICAL_ANCHORS = CANONICAL_PROFILES[DEFAULT_PROFILE_ID];
 
 export const GATE_DEFINITIONS = Object.freeze([
   { id: 'lean-version', command: 'lean --version', expectedOutcome: 'PASS' },
@@ -37,7 +48,9 @@ export interface CertificationEvaluation {
   formula: string;
   finalVerified: boolean;
   predicates: Record<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R', PredicateResult>;
-  canonicalAnchors: typeof CANONICAL_ANCHORS;
+  canonicalProfileId: string;
+  canonicalAnchors: Readonly<CanonicalAnchors>;
+  canonicalProfiles: typeof CANONICAL_PROFILES;
   evidenceSha256: string | null;
   evidenceSource: string;
   generatedAt: string | null;
@@ -77,7 +90,9 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
         O_2: pending('network-isolated reconstruction #2 executed'),
         R: pending('two independent builders produced identical bytes')
       },
+      canonicalProfileId: DEFAULT_PROFILE_ID,
       canonicalAnchors: CANONICAL_ANCHORS,
+      canonicalProfiles: CANONICAL_PROFILES,
       evidenceSha256: null,
       evidenceSource,
       generatedAt: null
@@ -85,14 +100,27 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
   }
 
   const provenanceReasons: string[] = [];
-  if (get(evidence, ['schemaVersion']) !== '3.0.0') provenanceReasons.push('Evidence schemaVersion must be 3.0.0.');
+  const schemaVersion = get(evidence, ['schemaVersion']);
+  const anchors = get(evidence, ['anchors']) as any;
+  let canonicalProfileId = DEFAULT_PROFILE_ID;
+  if (schemaVersion === '3.1.0') {
+    const requestedProfileId = anchors?.profileId;
+    if (typeof requestedProfileId !== 'string' || !CANONICAL_PROFILES[requestedProfileId]) {
+      provenanceReasons.push('Evidence profileId is missing or is not allow-listed.');
+    } else {
+      canonicalProfileId = requestedProfileId;
+    }
+  } else if (schemaVersion !== '3.0.0') {
+    provenanceReasons.push('Evidence schemaVersion must be 3.0.0 or 3.1.0.');
+  }
+  const canonicalAnchors = CANONICAL_PROFILES[canonicalProfileId];
   if (get(evidence, ['source', 'repository']) !== 'kolberz/Toolchain_factory') provenanceReasons.push('Evidence repository identity is invalid.');
   if (!/^[0-9a-f]{40}$/.test(String(get(evidence, ['source', 'commit']) || ''))) provenanceReasons.push('Evidence commit SHA is invalid.');
   if (!/^[0-9]+$/.test(String(get(evidence, ['source', 'runId']) || ''))) provenanceReasons.push('Evidence workflow run ID is invalid.');
   if (get(evidence, ['source', 'runnerImage']) !== 'ubuntu-24.04') provenanceReasons.push('Evidence runner image is invalid.');
   if (String(get(evidence, ['source', 'builderInstance'])) !== '1') provenanceReasons.push('Final evidence must originate from primary builder 1.');
-  const anchors = get(evidence, ['anchors']) as any;
-  for (const [key, expected] of Object.entries(CANONICAL_ANCHORS)) {
+  const canonicalEntries = Object.entries(canonicalAnchors).filter(([key]) => schemaVersion === '3.1.0' || (key !== 'profileId' && key !== 'leanVersion'));
+  for (const [key, expected] of canonicalEntries) {
     if (anchors?.[key] !== expected) provenanceReasons.push(`${key} does not match the canonical anchor.`);
   }
 
@@ -190,7 +218,9 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
     formula: `C_final = ${predicates.P.value} AND ${predicates.T.value} AND ${predicates.E.value} AND ${predicates.O_1.value} AND ${predicates.O_2.value} AND ${predicates.R.value} = ${finalVerified}`,
     finalVerified,
     predicates,
-    canonicalAnchors: CANONICAL_ANCHORS,
+    canonicalProfileId,
+    canonicalAnchors,
+    canonicalProfiles: CANONICAL_PROFILES,
     evidenceSha256,
     evidenceSource,
     generatedAt: typeof (evidence as any).generatedAt === 'string' ? (evidence as any).generatedAt : null
