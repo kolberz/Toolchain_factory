@@ -33,23 +33,101 @@ jobs:
           if [[ -z "$tag" ]]; then
             tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
           fi
+          [[ "$tag" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo 'release tag contains unsupported characters' >&2; exit 1; }
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir hydrated
-          printf '%s\n' "$tag" > hydrated/REHYDRATED-TAG.txt
+          printf 'REHYDRATED_TAG=%s\n' "$tag" >> "$GITHUB_ENV"
       - name: Verify every durable release asset
         run: |
           cd hydrated
+          [[ -f ARTIFACT-SHA256SUMS.txt ]] || { echo 'release checksum inventory is missing' >&2; exit 1; }
+          awk 'NF != 2 || $1 !~ /^[0-9a-f]{64}$/ || $2 !~ /^[A-Za-z0-9._-]+$/ { exit 1 }' ARTIFACT-SHA256SUMS.txt
+          [[ "$(awk '{print $2}' ARTIFACT-SHA256SUMS.txt | sort | uniq -d | wc -l)" == 0 ]] || { echo 'duplicate release asset in checksum inventory' >&2; exit 1; }
+          mapfile -t expected_assets < <({ awk '{print $2}' ARTIFACT-SHA256SUMS.txt; printf '%s\n' ARTIFACT-SHA256SUMS.txt; } | sort)
+          mapfile -t actual_assets < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          [[ "${expected_assets[*]}" == "${actual_assets[*]}" ]] || {
+            echo 'release asset set differs from the checksum inventory' >&2
+            diff --unified=3 <(printf '%s\n' "${expected_assets[@]}") <(printf '%s\n' "${actual_assets[@]}") || true
+            exit 1
+          }
           sha256sum --check --strict ARTIFACT-SHA256SUMS.txt
+      - name: Authenticate the original certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$REHYDRATED_TAG" --jq .sha)"
+          [[ "$tag_commit" =~ ^[0-9a-f]{40}$ ]] || { echo 'release tag did not resolve to a commit' >&2; exit 1; }
+
+          mkdir -p hydrated/verification hydrated/consumer
+          unzip -q hydrated/portable-lean-toolchain-verification.zip -d hydrated/verification
+          unzip -q hydrated/portable-lean-toolchain-consumer-receipt.zip -d hydrated/consumer
+
+          manifest_commit="$(jq -er '.source.commit' hydrated/toolchain-manifest.json)"
+          evidence_commit="$(jq -er '.source.commit' hydrated/verification/certification-evidence.json)"
+          receipt_commit="$(jq -er '.commit' hydrated/consumer/consumer-receipt.json)"
+          [[ "$manifest_commit" == "$tag_commit" && "$evidence_commit" == "$tag_commit" && "$receipt_commit" == "$tag_commit" ]] || {
+            echo 'release tag, manifest, evidence, and consumer receipt are not bound to one commit' >&2
+            exit 1
+          }
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
+            .source.repository == $repository and
+            .source.workflow == "build-portable-toolchain"
+          ' hydrated/toolchain-manifest.json >/dev/null
+          manifest_profile="$(jq -er '.anchors.profileId // "lean-4.32.2"' hydrated/toolchain-manifest.json)"
+          evidence_profile="$(jq -er '.anchors.profileId // "lean-4.32.2"' hydrated/verification/certification-evidence.json)"
+          receipt_profile="$(jq -er '.profileId // "lean-4.32.2"' hydrated/consumer/consumer-receipt.json)"
+          [[ "$manifest_profile" == "$evidence_profile" && "$evidence_profile" == "$receipt_profile" ]] || {
+            echo 'manifest, evidence, and consumer receipt profiles differ' >&2
+            exit 1
+          }
+          evidence_sha256="$(sha256sum hydrated/verification/certification-evidence.json | cut -d' ' -f1)"
+          [[ "$(jq -er '.evidenceSha256' hydrated/consumer/consumer-receipt.json)" == "$evidence_sha256" ]] || {
+            echo 'consumer receipt is not bound to the finalized evidence' >&2
+            exit 1
+          }
+          jq -e '
+            .artifactDownload == true and
+            .partChecksumVerificationExitCode == 0 and
+            .reconstructionExitCode == 0 and
+            .networkMode == "none" and
+            .lakeBuildExitCode == 0 and
+            .smokeExitCode == 0
+          ' hydrated/consumer/consumer-receipt.json >/dev/null
+
+          signer_workflow="$GITHUB_REPOSITORY/.github/workflows/build-portable-toolchain.yml"
+          for subject in \
+            hydrated/toolchain-manifest.json \
+            hydrated/verification/certification-evidence.json \
+            hydrated/consumer/consumer-receipt.json; do
+            gh attestation verify "$subject" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$signer_workflow" \
+              --source-digest "$tag_commit" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+          npx tsx scripts/evaluate-evidence.ts \
+            hydrated/verification/certification-evidence.json \
+            "$RUNNER_TEMP/rehydration-verdict.json"
+          printf '%s\n' "$REHYDRATED_TAG" > hydrated/REHYDRATED-TAG.txt
+          jq -n \
+            --arg tag "$REHYDRATED_TAG" \
+            --arg commit "$tag_commit" \
+            --arg profileId "$manifest_profile" \
+            --arg manifestSha256 "$(sha256sum hydrated/toolchain-manifest.json | cut -d' ' -f1)" \
+            --arg evidenceSha256 "$evidence_sha256" \
+            '{schemaVersion:"1.0.0",tag:$tag,commit:$commit,profileId:$profileId,manifestSha256:$manifestSha256,evidenceSha256:$evidenceSha256,originalBuildAttestationsVerified:true,sourceRef:"refs/heads/main",selfHostedRunnersDenied:true}' \
+            > hydrated/original-attestations-verified.json
       - name: Stage connector layouts
         run: |
-          mkdir -p hydrated/index hydrated/verification
+          mkdir -p hydrated/index
           cp hydrated/part-sha256sums.txt \
             hydrated/toolchain-manifest.json \
             hydrated/toolchain-manifest.json.sha256 \
             hydrated/download-actions-artifacts.sh \
             hydrated/verify-and-reconstruct.sh \
             hydrated/REHYDRATED-TAG.txt \
+            hydrated/original-attestations-verified.json \
             hydrated/index/
-          unzip -q hydrated/portable-lean-toolchain-verification.zip -d hydrated/verification
       - name: Upload transport index
         uses: actions/upload-artifact@v7
         with:
@@ -75,6 +153,18 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: hydrated/toolchain-manifest.json
+      - name: Write authenticated rehydration receipt
+        run: |
+          jq -n \
+            --slurpfile authentication hydrated/original-attestations-verified.json \
+            --slurpfile parts hydrated/rehydrated-parts.json \
+            --arg releaseAssetsSha256 "$(sha256sum hydrated/ARTIFACT-SHA256SUMS.txt | cut -d' ' -f1)" \
+            '{schemaVersion:"1.0.0",authentication:$authentication[0],releaseAssetsSha256:$releaseAssetsSha256,transport:$parts[0]}' \
+            > hydrated/rehydration-receipt.json
+      - name: Attest the authenticated rehydration receipt
+        uses: actions/attest@v4
+        with:
+          subject-path: hydrated/rehydration-receipt.json
       - name: Publish rehydration receipt
         uses: actions/upload-artifact@v7
         with:
@@ -82,6 +172,8 @@ jobs:
           path: |
             hydrated/REHYDRATED-TAG.txt
             hydrated/rehydrated-parts.json
+            hydrated/original-attestations-verified.json
+            hydrated/rehydration-receipt.json
             hydrated/ARTIFACT-SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 6

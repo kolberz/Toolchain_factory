@@ -92,6 +92,15 @@ test('rejects a non-allow-listed profile', () => {
   assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
 });
 
+test('rejects semantically valid evidence when authenticity verification fails', () => {
+  const result = evaluateCertificationEvidence(validEvidence(), 'synthetic evidence', {
+    provenanceReasons: ['Evidence authenticity was not verified: no matching GitHub attestation.']
+  });
+  assert.equal(result.finalVerified, false);
+  assert.equal(result.predicates.P.value, false);
+  assert.match(result.predicates.P.reasons.join(' '), /authenticity was not verified/i);
+});
+
 test('does not accept predicate booleans as evidence', () => {
   const result = evaluateCertificationEvidence({ P: true, T: true, E: true, O_1: true, O_2: true, R: true });
   assert.equal(result.finalVerified, false);

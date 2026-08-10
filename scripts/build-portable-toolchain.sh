@@ -175,6 +175,27 @@ jq -n \
   '{schemaVersion:"1.1.0",anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
   > "$out_dir/reproducibility-fingerprint.json"
 
+generated_at="$(date --utc +'%Y-%m-%dT%H:%M:%SZ')"
+repository="${GITHUB_REPOSITORY:-local/Toolchain_factory}"
+commit="${GITHUB_SHA:-$(git -C "$repo_root" rev-parse HEAD)}"
+run_id="${GITHUB_RUN_ID:-local}"
+
+jq -n \
+  --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
+  --arg profileId "$profile_id" --arg leanVersion "$LEAN_VERSION" \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
+  --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
+  --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
+  --arg partSetSha256 "$part_set_sha256" --slurpfile parts "$out_dir/parts.ndjson" \
+  '{
+    schemaVersion:"3.1.0", generatedAt:$generatedAt,
+    source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},
+    anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
+    transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts}
+  }' > "$out_dir/toolchain-manifest.json"
+sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json.sha256"
+cp "$out_dir/toolchain-manifest.json" "$out_dir/toolchain-manifest.json.sha256" "$parts_dir/"
+
 docker build --tag lean-toolchain-offline-verifier \
   --file "$repo_root/scripts/offline-verifier.Dockerfile" "$repo_root" > "$logs_dir/docker-image.log" 2>&1
 : > "$out_dir/offline.ndjson"
@@ -210,11 +231,6 @@ for number in 1 2; do
     '{id:$id,networkMode:"none",treeSha256:$treeSha256,lakeBuildExitCode:$lakeBuildExitCode,smokeExitCode:$smokeExitCode,logSha256:$logSha256}' >> "$out_dir/offline.ndjson"
 done
 
-generated_at="$(date --utc +'%Y-%m-%dT%H:%M:%SZ')"
-repository="${GITHUB_REPOSITORY:-local/Toolchain_factory}"
-commit="${GITHUB_SHA:-$(git -C "$repo_root" rev-parse HEAD)}"
-run_id="${GITHUB_RUN_ID:-local}"
-
 jq -n \
   --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
   --arg profileId "$profile_id" \
@@ -236,8 +252,24 @@ jq -n \
   }' > "$out_dir/certification-evidence.json"
 
 sha256sum "$out_dir/certification-evidence.json" > "$out_dir/certification-evidence.json.sha256"
-jq '{schemaVersion,generatedAt,source,anchors,transport}' "$out_dir/certification-evidence.json" > "$out_dir/toolchain-manifest.json"
-sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json.sha256"
+jq '{schemaVersion,generatedAt,source,anchors,transport}' "$out_dir/certification-evidence.json" > "$out_dir/evidence-manifest.json"
+cmp --silent "$out_dir/toolchain-manifest.json" "$out_dir/evidence-manifest.json" || { echo 'final evidence differs from the reconstruction manifest' >&2; exit 1; }
+rm -f -- "$out_dir/evidence-manifest.json"
+
+# The public reconstruction helper must reject stale or injected part files,
+# even when every checksum-listed part remains valid.
+printf -v unlisted_suffix '%03d' "${#generated_parts[@]}"
+unlisted_part="$parts_dir/portable-lean-toolchain.tar.zst.part-$unlisted_suffix"
+printf 'deliberately unlisted transport bytes\n' > "$unlisted_part"
+set +e
+bash "$repo_root/scripts/verify-and-reconstruct.sh" \
+  "$parts_dir" "$work_root/unlisted-part-negative-control" \
+  > "$logs_dir/unlisted-part-negative-control.log" 2>&1
+unlisted_part_exit=$?
+set -e
+rm -f -- "$unlisted_part"
+[[ $unlisted_part_exit -ne 0 ]] || { echo 'reconstruction helper accepted an unlisted part' >&2; exit 1; }
+grep -F 'discovered part set differs from checksum inventory' "$logs_dir/unlisted-part-negative-control.log"
 
 {
   echo 'BUILDER CERTIFICATION COMPLETE — CROSS-BUILDER COMPARISON PENDING'
