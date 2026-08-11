@@ -1,4 +1,6 @@
 import express from 'express';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createServer as createViteServer } from 'vite';
@@ -12,15 +14,105 @@ import {
   loadCertificationEvidence
 } from './certification.ts';
 
+const ATTESTATION_REPOSITORY = 'kolberz/Toolchain_factory';
+const ATTESTATION_WORKFLOW = 'kolberz/Toolchain_factory/.github/workflows/build-portable-toolchain.yml';
+
+interface AttestationVerification {
+  verified: boolean;
+  repository: string;
+  signerWorkflow: string;
+  sourceDigest: string | null;
+  sourceRef: string;
+  evidenceSha256: string | null;
+  message: string;
+}
+
+let attestationCache: { key: string; result: AttestationVerification } | null = null;
+
+function verifyEvidenceAttestation(evidence: any, evidencePath: string): AttestationVerification {
+  const sourceDigest = typeof evidence?.source?.commit === 'string' ? evidence.source.commit : null;
+  const sourceRef = process.env.CERTIFICATION_SOURCE_REF || 'refs/heads/main';
+  const base = {
+    repository: ATTESTATION_REPOSITORY,
+    signerWorkflow: ATTESTATION_WORKFLOW,
+    sourceDigest,
+    sourceRef
+  };
+
+  if (!sourceDigest || !/^[0-9a-f]{40}$/.test(sourceDigest)) {
+    return { ...base, verified: false, evidenceSha256: null, message: 'Evidence source commit is missing or invalid.' };
+  }
+
+  let rawEvidence: Buffer;
+  try {
+    rawEvidence = readFileSync(evidencePath);
+  } catch (error: any) {
+    return { ...base, verified: false, evidenceSha256: null, message: error?.message || 'Unable to read evidence bytes.' };
+  }
+  const evidenceSha256 = createHash('sha256').update(rawEvidence).digest('hex');
+  const cacheKey = `${evidencePath}\0${evidenceSha256}\0${sourceDigest}\0${sourceRef}`;
+  if (attestationCache?.key === cacheKey) return attestationCache.result;
+
+  const ghBinary = process.env.GITHUB_CLI_PATH || 'gh';
+  const verification = spawnSync(ghBinary, [
+    'attestation', 'verify', evidencePath,
+    '--repo', ATTESTATION_REPOSITORY,
+    '--signer-workflow', ATTESTATION_WORKFLOW,
+    '--source-digest', sourceDigest,
+    '--source-ref', sourceRef,
+    '--deny-self-hosted-runners'
+  ], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    windowsHide: true
+  });
+
+  const diagnostic = [verification.error?.message, verification.stderr, verification.stdout]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const result: AttestationVerification = verification.status === 0
+    ? { ...base, verified: true, evidenceSha256, message: 'GitHub attestation verified.' }
+    : {
+        ...base,
+        verified: false,
+        evidenceSha256,
+        message: diagnostic || `GitHub attestation verification exited ${verification.status ?? 'without a status'}.`
+      };
+  // Cache only cryptographic success. Authentication/network failures must be
+  // retried on the next request rather than becoming sticky until restart.
+  if (result.verified) attestationCache = { key: cacheKey, result };
+  return result;
+}
+
 function readServerEvidence() {
   try {
     const loaded = loadCertificationEvidence();
-    return { evidence: loaded.evidence, evaluation: evaluateCertificationEvidence(loaded.evidence, loaded.source), loadError: null };
+    if (!loaded.evidence) {
+      return {
+        evidence: loaded.evidence,
+        evaluation: evaluateCertificationEvidence(loaded.evidence, loaded.source),
+        attestation: null,
+        loadError: null
+      };
+    }
+    const attestation = verifyEvidenceAttestation(loaded.evidence, loaded.source);
+    const provenanceReasons = attestation.verified
+      ? []
+      : [`Evidence authenticity was not verified: ${attestation.message}`];
+    return {
+      evidence: loaded.evidence,
+      evaluation: evaluateCertificationEvidence(loaded.evidence, loaded.source, { provenanceReasons }),
+      attestation,
+      loadError: null
+    };
   } catch (error: any) {
     const source = process.env.CERTIFICATION_EVIDENCE_PATH || 'CERTIFICATION_EVIDENCE_PATH';
     return {
       evidence: null,
       evaluation: evaluateCertificationEvidence(null, source),
+      attestation: null,
       loadError: error?.message || 'Unable to load certification evidence.'
     };
   }
@@ -37,12 +129,13 @@ async function startServer() {
   });
 
   app.get('/api/certification/status', (_req, res) => {
-    const { evaluation, loadError } = readServerEvidence();
+    const { evaluation, attestation, loadError } = readServerEvidence();
     res.json({
       ...evaluation,
+      attestation,
       loadError,
       target: 'P AND T AND E AND O_1 AND O_2 AND R derived from GitHub Actions evidence',
-      trustBoundary: 'The browser cannot assign predicates. The server reads a workflow-produced evidence file.',
+      trustBoundary: 'The browser cannot assign predicates. The server requires a GitHub-attested workflow evidence file.',
       automaticInvalidationRule: 'Any missing, malformed, or mismatched dependency makes its predicate false.'
     });
   });
@@ -52,8 +145,9 @@ async function startServer() {
     res.json({
       evaluation: result.evaluation,
       evidence: result.evidence,
+      attestation: result.attestation,
       loadError: result.loadError,
-      immutability: 'Evidence is a content-addressed GitHub Actions artifact; this API is read-only.'
+      immutability: 'Evidence must have a GitHub attestation bound to the canonical workflow, source commit, and configured source ref; this API is read-only.'
     });
   });
 

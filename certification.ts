@@ -56,6 +56,10 @@ export interface CertificationEvaluation {
   generatedAt: string | null;
 }
 
+export interface CertificationEvaluationOptions {
+  provenanceReasons?: string[];
+}
+
 function get(record: unknown, keys: string[]): unknown {
   let current = record as any;
   for (const key of keys) current = current && typeof current === 'object' ? current[key] : undefined;
@@ -75,7 +79,11 @@ function predicate(name: string, reasons: string[], pending = false): PredicateR
   };
 }
 
-export function evaluateCertificationEvidence(evidence: unknown, evidenceSource = 'server-owned evidence file'): CertificationEvaluation {
+export function evaluateCertificationEvidence(
+  evidence: unknown,
+  evidenceSource = 'server-owned evidence file',
+  options: CertificationEvaluationOptions = {}
+): CertificationEvaluation {
   if (!evidence || typeof evidence !== 'object') {
     const pending = (name: string) => predicate(name, ['No workflow evidence has been loaded.'], true);
     return {
@@ -99,7 +107,7 @@ export function evaluateCertificationEvidence(evidence: unknown, evidenceSource 
     };
   }
 
-  const provenanceReasons: string[] = [];
+  const provenanceReasons: string[] = [...(options.provenanceReasons || [])];
   const schemaVersion = get(evidence, ['schemaVersion']);
   const anchors = get(evidence, ['anchors']) as any;
   let canonicalProfileId = DEFAULT_PROFILE_ID;
