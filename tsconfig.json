@@ -25,5 +25,5 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["src", "server.ts", "certification.ts", "tests"]
+  "include": ["src", "server.ts", "certification.ts", "project-certification.ts", "scripts", "tests"]
 }

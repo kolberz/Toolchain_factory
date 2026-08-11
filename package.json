@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/certification.test.ts",
-    "certify:evidence": "tsx scripts/evaluate-evidence.ts"
+    "test": "tsx --test tests/certification.test.ts tests/project-certification.test.ts",
+    "certify:evidence": "tsx scripts/evaluate-evidence.ts",
+    "certify:project": "tsx scripts/evaluate-project-evidence.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

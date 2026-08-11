@@ -1498,6 +1498,12 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     responseSample: `{ "evaluation": { ... }, "evidence": { ... } }`
                   },
                   {
+                    method: 'GET',
+                    endpoint: '/api/project-certification/status',
+                    desc: 'Returns the optional attested two-layer project verdict without changing the base toolchain certificate.',
+                    responseSample: `{ "status": "PENDING — PROJECT EVIDENCE NOT LOADED", "finalVerified": false, ... }`
+                  },
+                  {
                     method: 'POST',
                     endpoint: '/api/genai',
                     desc: 'Server-side Gemini 2.5 Flash proxy for agent toolchain architectural analysis.',

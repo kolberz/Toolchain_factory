@@ -13,6 +13,11 @@ import {
   evaluateCertificationEvidence,
   loadCertificationEvidence
 } from './certification.ts';
+import {
+  evaluateProjectCertificationEvidence,
+  loadProjectCertificationEvidence,
+  type VerifiedToolchainContext
+} from './project-certification.ts';
 
 const ATTESTATION_REPOSITORY = 'kolberz/Toolchain_factory';
 const ATTESTATION_WORKFLOW = 'kolberz/Toolchain_factory/.github/workflows/build-portable-toolchain.yml';
@@ -27,20 +32,32 @@ interface AttestationVerification {
   message: string;
 }
 
-let attestationCache: { key: string; result: AttestationVerification } | null = null;
+interface AttestationPolicy {
+  repository: string;
+  signerWorkflow: string;
+  sourceRef: string;
+  requireDeclaredWorkflow?: boolean;
+}
 
-function verifyEvidenceAttestation(evidence: any, evidencePath: string): AttestationVerification {
+const attestationCache = new Map<string, AttestationVerification>();
+
+function verifyEvidenceAttestation(evidence: any, evidencePath: string, policy: AttestationPolicy): AttestationVerification {
   const sourceDigest = typeof evidence?.source?.commit === 'string' ? evidence.source.commit : null;
-  const sourceRef = process.env.CERTIFICATION_SOURCE_REF || 'refs/heads/main';
   const base = {
-    repository: ATTESTATION_REPOSITORY,
-    signerWorkflow: ATTESTATION_WORKFLOW,
+    repository: policy.repository,
+    signerWorkflow: policy.signerWorkflow,
     sourceDigest,
-    sourceRef
+    sourceRef: policy.sourceRef
   };
 
   if (!sourceDigest || !/^[0-9a-f]{40}$/.test(sourceDigest)) {
     return { ...base, verified: false, evidenceSha256: null, message: 'Evidence source commit is missing or invalid.' };
+  }
+  if (evidence?.source?.repository !== policy.repository) {
+    return { ...base, verified: false, evidenceSha256: null, message: 'Evidence source repository does not match the attestation policy.' };
+  }
+  if (policy.requireDeclaredWorkflow && evidence?.source?.workflow !== policy.signerWorkflow) {
+    return { ...base, verified: false, evidenceSha256: null, message: 'Evidence signer workflow does not match the attestation policy.' };
   }
 
   let rawEvidence: Buffer;
@@ -50,16 +67,17 @@ function verifyEvidenceAttestation(evidence: any, evidencePath: string): Attesta
     return { ...base, verified: false, evidenceSha256: null, message: error?.message || 'Unable to read evidence bytes.' };
   }
   const evidenceSha256 = createHash('sha256').update(rawEvidence).digest('hex');
-  const cacheKey = `${evidencePath}\0${evidenceSha256}\0${sourceDigest}\0${sourceRef}`;
-  if (attestationCache?.key === cacheKey) return attestationCache.result;
+  const cacheKey = `${evidencePath}\0${evidenceSha256}\0${sourceDigest}\0${policy.sourceRef}\0${policy.repository}\0${policy.signerWorkflow}`;
+  const cached = attestationCache.get(cacheKey);
+  if (cached) return cached;
 
   const ghBinary = process.env.GITHUB_CLI_PATH || 'gh';
   const verification = spawnSync(ghBinary, [
     'attestation', 'verify', evidencePath,
-    '--repo', ATTESTATION_REPOSITORY,
-    '--signer-workflow', ATTESTATION_WORKFLOW,
+    '--repo', policy.repository,
+    '--signer-workflow', policy.signerWorkflow,
     '--source-digest', sourceDigest,
-    '--source-ref', sourceRef,
+    '--source-ref', policy.sourceRef,
     '--deny-self-hosted-runners'
   ], {
     encoding: 'utf8',
@@ -82,7 +100,7 @@ function verifyEvidenceAttestation(evidence: any, evidencePath: string): Attesta
       };
   // Cache only cryptographic success. Authentication/network failures must be
   // retried on the next request rather than becoming sticky until restart.
-  if (result.verified) attestationCache = { key: cacheKey, result };
+  if (result.verified) attestationCache.set(cacheKey, result);
   return result;
 }
 
@@ -97,7 +115,11 @@ function readServerEvidence() {
         loadError: null
       };
     }
-    const attestation = verifyEvidenceAttestation(loaded.evidence, loaded.source);
+    const attestation = verifyEvidenceAttestation(loaded.evidence, loaded.source, {
+      repository: ATTESTATION_REPOSITORY,
+      signerWorkflow: ATTESTATION_WORKFLOW,
+      sourceRef: process.env.CERTIFICATION_SOURCE_REF || 'refs/heads/main'
+    });
     const provenanceReasons = attestation.verified
       ? []
       : [`Evidence authenticity was not verified: ${attestation.message}`];
@@ -114,6 +136,74 @@ function readServerEvidence() {
       evaluation: evaluateCertificationEvidence(null, source),
       attestation: null,
       loadError: error?.message || 'Unable to load certification evidence.'
+    };
+  }
+}
+
+function readProjectServerEvidence() {
+  const toolchainResult = readServerEvidence();
+  const toolchain: VerifiedToolchainContext = {
+    finalVerified: toolchainResult.evaluation.finalVerified,
+    attestationVerified: toolchainResult.attestation?.verified === true,
+    canonicalProfileId: toolchainResult.evaluation.canonicalProfileId,
+    evidenceSha256: toolchainResult.attestation?.evidenceSha256 || null
+  };
+
+  try {
+    const loaded = loadProjectCertificationEvidence();
+    if (!loaded.evidence) {
+      return {
+        evidence: loaded.evidence,
+        evaluation: evaluateProjectCertificationEvidence(loaded.evidence, toolchain, loaded.source),
+        attestation: null,
+        loadError: null
+      };
+    }
+
+    const repository = process.env.PROJECT_CERTIFICATION_REPOSITORY;
+    const signerWorkflow = process.env.PROJECT_CERTIFICATION_WORKFLOW;
+    if (!repository || !signerWorkflow) {
+      const missing = [
+        !repository ? 'PROJECT_CERTIFICATION_REPOSITORY' : null,
+        !signerWorkflow ? 'PROJECT_CERTIFICATION_WORKFLOW' : null
+      ].filter(Boolean).join(' and ');
+      return {
+        evidence: loaded.evidence,
+        evaluation: evaluateProjectCertificationEvidence(loaded.evidence, toolchain, loaded.source, {
+          authenticated: false,
+          authenticationReasons: [`Project evidence authenticity cannot be checked until ${missing} is configured.`]
+        }),
+        attestation: null,
+        loadError: null
+      };
+    }
+
+    const attestation = verifyEvidenceAttestation(loaded.evidence, loaded.source, {
+      repository,
+      signerWorkflow,
+      sourceRef: process.env.PROJECT_CERTIFICATION_SOURCE_REF || 'refs/heads/main',
+      requireDeclaredWorkflow: true
+    });
+    const authenticationReasons = attestation.verified
+      ? []
+      : [`Project evidence authenticity was not verified: ${attestation.message}`];
+    return {
+      evidence: loaded.evidence,
+      evaluation: evaluateProjectCertificationEvidence(loaded.evidence, toolchain, loaded.source, {
+        authenticated: attestation.verified,
+        authenticationReasons,
+        rawEvidenceSha256: attestation.evidenceSha256
+      }),
+      attestation,
+      loadError: null
+    };
+  } catch (error: any) {
+    const source = process.env.PROJECT_CERTIFICATION_EVIDENCE_PATH || 'PROJECT_CERTIFICATION_EVIDENCE_PATH';
+    return {
+      evidence: null,
+      evaluation: evaluateProjectCertificationEvidence(null, toolchain, source),
+      attestation: null,
+      loadError: error?.message || 'Unable to load project certification evidence.'
     };
   }
 }
@@ -166,6 +256,37 @@ async function startServer() {
     });
   });
 
+  app.get('/api/project-certification/status', (_req, res) => {
+    const { evaluation, attestation, loadError } = readProjectServerEvidence();
+    res.json({
+      ...evaluation,
+      attestation,
+      loadError,
+      target: 'A AND C_toolchain AND K_Lean AND W_external AND N_Lean AND N_external derived from workflow evidence',
+      trustBoundary: 'Lean certifies exact aggregation logic. A separate verifier checks numerical witnesses. Neither layer is represented as proving the other.',
+      automaticInvalidationRule: 'Any missing, malformed, unauthenticated, or cross-hash-mismatched dependency makes its predicate false.'
+    });
+  });
+
+  app.get('/api/project-certification/evidence', (_req, res) => {
+    const result = readProjectServerEvidence();
+    res.json({
+      evaluation: result.evaluation,
+      evidence: result.evidence,
+      attestation: result.attestation,
+      loadError: result.loadError,
+      immutability: 'Project evidence must be GitHub-attested by the explicitly configured project repository, workflow, commit, and source ref; this API is read-only.'
+    });
+  });
+
+  app.post('/api/project-certification/evaluate', (_req, res) => {
+    res.status(405).json({
+      error: 'CLIENT_PROJECT_CERTIFICATION_REJECTED',
+      message: 'Project predicates are derived only from the server-owned, attested project evidence file and verified base-toolchain context.',
+      statusEndpoint: '/api/project-certification/status'
+    });
+  });
+
   app.get('/api/certification/gates', (_req, res) => {
     res.json({
       gateStatusFormula: 'actualOutcome(exitCode) === expectedOutcome(server-owned gate definition)',
@@ -196,6 +317,7 @@ async function startServer() {
       acquisitionScript: 'scripts/download-actions-artifacts.sh',
       wrapperConstraint: 'Each payload part is uploaded as its own Actions artifact below 450 MiB.',
       certificationStatus: '/api/certification/status',
+      projectCertificationStatus: '/api/project-certification/status',
       statement: 'Build, download, execution, and offline reconstruction occur on the Ubuntu workflow runner, not in the browser.'
     });
   });
