@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kolberz/Toolchain_factory/project-certificate.schema.json",
+  "title": "Toolchain Factory two-layer project certification evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "source",
+    "project",
+    "toolchain",
+    "leanAggregation",
+    "externalVerification",
+    "negativeControls"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "runId", "workflow", "runnerImage"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "runId": { "type": "string", "pattern": "^[0-9]+$" },
+        "workflow": { "type": "string", "minLength": 1 },
+        "runnerImage": { "type": "string", "minLength": 1 }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "componentBankSha256", "componentCount"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "componentBankSha256": { "$ref": "#/$defs/sha256" },
+        "componentCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileId", "certificationEvidenceSha256"],
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "certificationEvidenceSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "leanAggregation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "theorem",
+        "sourceSha256",
+        "leanExecutableSha256",
+        "exitCode",
+        "logSha256",
+        "axiomsCommand",
+        "axiomsExitCode",
+        "axiomsLogSha256"
+      ],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "theorem": { "type": "string", "minLength": 1 },
+        "sourceSha256": { "$ref": "#/$defs/sha256" },
+        "leanExecutableSha256": { "$ref": "#/$defs/sha256" },
+        "exitCode": { "const": 0 },
+        "logSha256": { "$ref": "#/$defs/sha256" },
+        "axiomsCommand": { "type": "string", "minLength": 1 },
+        "axiomsExitCode": { "const": 0 },
+        "axiomsLogSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "externalVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verifierName",
+        "verifierVersion",
+        "verifierExecutableSha256",
+        "command",
+        "inputSha256",
+        "numericPolicySha256",
+        "verifiedComponentCount",
+        "exitCode",
+        "logSha256"
+      ],
+      "properties": {
+        "verifierName": { "type": "string", "minLength": 1 },
+        "verifierVersion": { "type": "string", "minLength": 1 },
+        "verifierExecutableSha256": { "$ref": "#/$defs/sha256" },
+        "command": { "type": "string", "minLength": 1 },
+        "inputSha256": { "$ref": "#/$defs/sha256" },
+        "numericPolicySha256": { "$ref": "#/$defs/sha256" },
+        "verifiedComponentCount": { "type": "integer", "minimum": 1 },
+        "exitCode": { "const": 0 },
+        "logSha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "negativeControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lean", "external"],
+      "properties": {
+        "lean": { "$ref": "#/$defs/negativeControl" },
+        "external": { "$ref": "#/$defs/negativeControl" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "negativeControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command", "mutatedInputSha256", "exitCode", "logSha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "mutatedInputSha256": { "$ref": "#/$defs/sha256" },
+        "exitCode": { "type": "integer", "not": { "const": 0 } },
+        "logSha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

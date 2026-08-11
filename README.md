@@ -52,6 +52,53 @@ lake env lean MathlibSmoke.lean
 
 `MathlibSmoke.lean` imports `Mathlib` and exercises `simp`, `norm_num`, `ring`, `aesop`, and `omega`. `InvalidTheorem.lean` is required to fail.
 
+## Optional two-layer project certificate
+
+Projects that combine exact Lean proofs with numerical geometry, trigonometry,
+floating-point, or external scientific computation can add a separate project
+certificate. This does not change or weaken `C_final` for the toolchain. It adds
+an explicitly scoped result:
+
+```text
+C_project = A AND C_toolchain AND K_Lean AND W_external AND N_Lean AND N_external
+```
+
+- `A`: the exact project-evidence bytes have a GitHub attestation from the configured project repository, workflow, commit, source ref, and a GitHub-hosted runner.
+- `C_toolchain`: the project names an allow-listed profile and the SHA-256 of the independently FINAL VERIFIED toolchain evidence loaded by the server.
+- `K_Lean`: Lean successfully checks the exact finite aggregation theorem and its axiom-audit command; the source, executable, and logs are content-addressed.
+- `W_external`: an independent verifier successfully checks every entry in the frozen component bank under a content-addressed numerical policy. Its executable, input, count, and log are recorded.
+- `N_Lean`: a deliberately malformed aggregation is rejected.
+- `N_external`: a deliberately mutated numerical witness is rejected.
+
+This split is useful when the theorem depends on precomputed numerical facts:
+Lean proves how accepted local facts aggregate, while the independent verifier
+checks how those local facts were calculated. The certificate never relabels
+SciPy, floating-point, or trigonometric evaluation as a Lean proof.
+
+The portable contract is [project-certificate.schema.json](project-certificate.schema.json).
+It accepts any positive component count (including an 808-component bank); the
+count is not hard-coded. A project workflow should freeze and hash its component
+bank and numerical-policy file, run both positive layers and both negative
+controls, then write the actual commands, exit codes, executable/input/log
+hashes, project revision, and base-toolchain evidence hash into one JSON record.
+
+Run the structural/semantic preflight with:
+
+```bash
+npm run certify:project -- \
+  project-certification-evidence.json \
+  verified-toolchain-context.json \
+  project-certification-verdict.json
+```
+
+The context file supplies `finalVerified`, `canonicalProfileId`, the raw base
+evidence SHA-256, and an attestation result from the project workflow's own
+acquisition step. That CLI output is deliberately limited to
+`semanticVerified`; it cannot set `A` or emit project FINAL VERIFIED. The project
+workflow should attest the finalized project-evidence file with GitHub artifact
+attestations. The server then repeats the base evaluation, independently verifies
+both attestations, and compares the evidence hashes before deriving `C_project`.
+
 ## Run the factory
 
 Open **Actions → Build reproducible portable Lean toolchain → Run workflow** and choose `lean-4.32.2` or `lean-4.33.0-rc1`. Pushes to `main` continue to certify the stable default `lean-4.32.2` profile; the rc1 profile is dispatched explicitly so the two evidence streams cannot be confused.
@@ -97,17 +144,35 @@ CERTIFICATION_SOURCE_REF=refs/heads/main \
 npm run dev
 ```
 
+To evaluate an optional project certificate, also configure its evidence path
+and exact attestation policy. Repository and workflow have no permissive
+defaults because the factory cannot safely guess which external project is
+trusted:
+
+```bash
+PROJECT_CERTIFICATION_EVIDENCE_PATH=/absolute/path/project-certification-evidence.json \
+PROJECT_CERTIFICATION_REPOSITORY=owner/project \
+PROJECT_CERTIFICATION_WORKFLOW=owner/project/.github/workflows/certify.yml \
+PROJECT_CERTIFICATION_SOURCE_REF=refs/heads/main \
+npm run dev
+```
+
 Useful endpoints:
 
 - `GET /api/certification/status` — server-derived predicate evaluation.
 - `GET /api/certification/evidence` — raw workflow evidence and evaluation.
 - `GET /api/certification/gates` — immutable gate definitions, without canned results.
+- `GET /api/project-certification/status` — optional two-layer project verdict.
+- `GET /api/project-certification/evidence` — raw project evidence, attestation result, and derived predicates.
 - `GET /api/manifest/anchors` — canonical upstream anchors.
 - `GET /api/toolchain/bootstrap` — workflow and artifact contract.
 
 Without workflow evidence, the honest status is `PENDING`. Evidence with invalid or unavailable attestation verification is `REJECTED`; upstream constants or structurally plausible JSON alone are not a portable-toolchain certificate.
 
 ## Local application checks
+
+Every pull request runs these same lightweight application checks on
+`ubuntu-24.04`; it does not launch the multi-gigabyte toolchain build.
 
 ```bash
 npm ci
@@ -116,7 +181,7 @@ npm test
 npm run build
 ```
 
-The tests include independent evidence mutations covering corrupt part hashes, oversized parts, substituted executables, falsified expected-failure outcomes, stale reconstruction IDs, mismatched reconstruction trees, cross-builder disagreement, and failed authenticity verification. Each mutation must prevent final certification. The real build additionally injects an unlisted transport part and requires the public reconstruction helper to reject it.
+The tests include independent evidence mutations covering corrupt part hashes, oversized parts, substituted executables, falsified expected-failure outcomes, stale reconstruction IDs, mismatched reconstruction trees, cross-builder disagreement, and failed authenticity verification. Project-certificate tests additionally attack the bound toolchain hash, component count, component-bank input, numerical-policy hash, Lean execution, and both negative controls. Each mutation must prevent final certification. The real build additionally injects an unlisted transport part and requires the public reconstruction helper to reject it.
 
 ## Trust boundary
 

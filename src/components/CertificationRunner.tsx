@@ -22,9 +22,29 @@ interface StatusResponse {
 }
 
 const predicateOrder: Array<'P' | 'T' | 'E' | 'O_1' | 'O_2' | 'R'> = ['P', 'T', 'E', 'O_1', 'O_2', 'R'];
+type ProjectPredicateCode = 'A' | 'C_toolchain' | 'K_Lean' | 'W_external' | 'N_Lean' | 'N_external';
+
+interface ProjectStatusResponse {
+  status: string;
+  formula: string;
+  semanticFormula: string;
+  semanticVerified: boolean;
+  finalVerified: boolean;
+  predicates: Record<ProjectPredicateCode, Predicate>;
+  projectId: string | null;
+  projectRevision: string | null;
+  componentCount: number | null;
+  toolchainProfileId: string | null;
+  projectEvidenceSha256: string | null;
+  evidenceSource: string;
+  loadError?: string | null;
+}
+
+const projectPredicateOrder: ProjectPredicateCode[] = ['A', 'C_toolchain', 'K_Lean', 'W_external', 'N_Lean', 'N_external'];
 
 export const CertificationRunner: React.FC = () => {
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [projectStatus, setProjectStatus] = useState<ProjectStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -48,6 +68,15 @@ export const CertificationRunner: React.FC = () => {
         ? `FINAL VERIFIED from workflow evidence ${body.evidenceSha256}.`
         : `Not certified: ${body.status}. No predicate was assigned by this browser.`);
       if (body.loadError) appendLog(`Evidence load error: ${body.loadError}`);
+
+      const projectResponse = await fetch('/api/project-certification/status', { cache: 'no-store' });
+      const projectBody = await projectResponse.json();
+      if (!projectResponse.ok) throw new Error(projectBody?.message || `Project status request failed (${projectResponse.status}).`);
+      setProjectStatus(projectBody);
+      appendLog(projectBody.finalVerified
+        ? `PROJECT FINAL VERIFIED for ${projectBody.projectId}@${projectBody.projectRevision}.`
+        : `Optional project certificate: ${projectBody.status}.`);
+      if (projectBody.loadError) appendLog(`Project evidence load error: ${projectBody.loadError}`);
     } catch (caught: any) {
       const message = caught?.message || 'Unable to load certification status.';
       setError(message);
@@ -152,6 +181,61 @@ export const CertificationRunner: React.FC = () => {
             {status?.formula || 'C_final = P ∧ T ∧ E ∧ O₁ ∧ O₂ ∧ R = false'}
           </span>
           {status?.evidenceSha256 && <div className="mt-2 text-[10px] text-slate-500 break-all">Evidence SHA-256: {status.evidenceSha256}</div>}
+        </div>
+      </section>
+
+      <section className="bg-slate-900/90 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-white">Optional Two-Layer Project Certificate</h2>
+              <span className="px-2.5 py-0.5 bg-violet-500/10 text-violet-300 border border-violet-500/30 rounded-full text-[10px] font-mono font-bold">
+                PROJECT-SPECIFIC
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1 max-w-3xl">
+              Lean kernel-checks exact aggregation; an independently hashed verifier checks the frozen numerical witnesses. This does not claim that Lean proved floating-point or trigonometric evaluation.
+            </p>
+          </div>
+          <div className={`p-3 rounded-xl border font-mono text-xs ${
+            projectStatus?.finalVerified
+              ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
+              : projectStatus?.semanticVerified
+                ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+                : 'bg-slate-950 border-slate-800 text-slate-400'
+          }`}>
+            <div className="font-bold">{projectStatus?.status || 'LOADING PROJECT EVIDENCE'}</div>
+            {projectStatus?.projectId && <div className="mt-1 text-[10px]">{projectStatus.projectId}@{projectStatus.projectRevision} · {projectStatus.componentCount} components</div>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          {projectPredicateOrder.map(code => {
+            const item = projectStatus?.predicates?.[code];
+            return (
+              <div key={code} className={`p-4 rounded-xl border ${
+                item?.value ? 'bg-emerald-950/40 border-emerald-500/40' : item?.state === 'FAILED' ? 'bg-rose-950/20 border-rose-500/30' : 'bg-slate-950 border-slate-800'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-mono font-bold text-white">{code.replace('_', ' ')}</span>
+                  {item?.value ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <XCircle className="w-4 h-4 text-slate-600" />}
+                </div>
+                <div className="text-[10px] font-bold tracking-wide text-slate-300">{item?.state || 'PENDING'}</div>
+                <div className="text-[11px] text-slate-400 mt-1 leading-tight">{item?.name}</div>
+                {item?.reasons?.map(reason => <div key={reason} className="text-[10px] text-rose-300 mt-2">{reason}</div>)}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="p-4 bg-slate-950 rounded-xl border border-violet-500/30 text-center font-mono text-xs">
+          <span className={projectStatus?.finalVerified ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+            {projectStatus?.formula || 'C_project = A ∧ C_toolchain ∧ K_Lean ∧ W_external ∧ N_Lean ∧ N_external = false'}
+          </span>
+          {projectStatus?.projectEvidenceSha256 && <div className="mt-2 text-[10px] text-slate-500 break-all">Project evidence SHA-256: {projectStatus.projectEvidenceSha256}</div>}
+          <a href="/api/project-certification/evidence" target="_blank" rel="noreferrer" className="inline-block mt-3 text-[11px] text-violet-300 hover:text-violet-200">
+            Open project evidence
+          </a>
         </div>
       </section>
 
