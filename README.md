@@ -171,6 +171,9 @@ Without workflow evidence, the honest status is `PENDING`. Evidence with invalid
 
 ## Local application checks
 
+Every pull request runs these same lightweight application checks on
+`ubuntu-24.04`; it does not launch the multi-gigabyte toolchain build.
+
 ```bash
 npm ci
 npm run lint
