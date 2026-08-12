@@ -19,3 +19,12 @@ test('the offline verifier base image is pinned by registry digest', () => {
   const dockerfile = readFileSync(path.join(repositoryRoot, 'scripts', 'offline-verifier.Dockerfile'), 'utf8');
   assert.match(dockerfile, /^FROM\s+ubuntu:24\.04@sha256:[0-9a-f]{64}\s*$/m);
 });
+
+test('the Zeta verifier fetches nanoda from the repository containing the pinned tree', () => {
+  const workflow = readFileSync(
+    path.join(repositoryRoot, '.github', 'workflows', 'verify-zeta23.yml'),
+    'utf8',
+  );
+  assert.match(workflow, /git clone https:\/\/github\.com\/ammkrn\/nanoda_lib\.git zeta-tools\/nanoda/);
+  assert.doesNotMatch(workflow, /github\.com\/robsimmons\/nanoda_lib/);
+});

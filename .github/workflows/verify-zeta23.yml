@@ -141,7 +141,7 @@ jobs:
           git -C zeta-tools/comparator checkout --detach "$comparator_pin"
           git clone https://github.com/zouuup/landrun.git zeta-tools/landrun
           git -C zeta-tools/landrun checkout --detach "$landrun_pin"
-          git clone https://github.com/robsimmons/nanoda_lib.git zeta-tools/nanoda
+          git clone https://github.com/ammkrn/nanoda_lib.git zeta-tools/nanoda
           git -C zeta-tools/nanoda checkout --detach "$nanoda_pin"
 
       - name: Build exact verifier tools before network isolation
