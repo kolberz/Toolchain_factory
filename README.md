@@ -12,11 +12,12 @@ across versions. Each build selects one complete, allow-listed profile from
 | --- | --- | --- | --- |
 | `lean-4.32.2` (default) | `v4.32.2` | `905b95818eb32af7874a58b427f50c1711a5e96c` | `5f2069e6f5db73780f374ccb49ce8ea649aa20a0cebf0116816744c999ce72aa` |
 | `lean-4.33.0-rc1` | `v4.33.0-rc1` | `79d0395a1825a6264ad5d269e35e60537518955e` | `25e7b3e18ec75a4e2529fc23194be8e3cc3183df99b553f870d8a111c7488210` |
+| `lean-4.33.0-rc2` | `v4.33.0-rc2` | `51e6992efd06126df61a496bebf8f49482a4e129` | `48010c7d6264dc992574e9b0e09ece1f9c648e8f5106066b2cdb6834a6a60a6c` |
 
-The rc1 profile exists for projects already pinned to
-`leanprover/lean4:v4.33.0-rc1`; it is a separate toolchain, not a claim that
-4.33 compiled artifacts are backward-compatible with 4.32. The certified
-4.32.2 release remains immutable.
+The rc profiles exist for projects already pinned to their exact prerelease.
+They are separate toolchains, not a claim that 4.33 compiled artifacts are
+backward-compatible with 4.32, or that rc1 and rc2 oleans are interchangeable.
+The certified 4.32.2 release remains immutable.
 
 The workflow downloads the selected official release, verifies both its full
 64-character SHA-256 and exact size, clones the exactly matching Mathlib tag,
@@ -54,7 +55,15 @@ lake env lean MathlibSmoke.lean
 
 ## Run the factory
 
-Open **Actions → Build reproducible portable Lean toolchain → Run workflow** and choose `lean-4.32.2` or `lean-4.33.0-rc1`. Pushes to `main` continue to certify the stable default `lean-4.32.2` profile; the rc1 profile is dispatched explicitly so the two evidence streams cannot be confused.
+Open **Actions → Build reproducible portable Lean toolchain → Run workflow**
+and choose `lean-4.32.2`, `lean-4.33.0-rc1`, or `lean-4.33.0-rc2`.
+Pushes to `main` continue to certify the stable default `lean-4.32.2`
+profile; prerelease profiles are dispatched explicitly so their evidence
+streams cannot be confused.
+
+For the exact Anthropic Zeta23 consumer described below, choose
+`lean-4.33.0-rc2` and enable **Run the exact Anthropic Zeta23 consumer
+certificate**. The workflow rejects that option with any other profile.
 
 The successful run uses two independent builders, evaluates their fingerprints, and then uploads connector-sized GitHub Actions artifacts:
 
@@ -85,6 +94,59 @@ lake env lean MathlibSmoke.lean
 ```
 
 The acquisition helper refuses a non-successful workflow run and verifies the part hashes after download. The reconstruction helper requires `jq`, `sha256sum`, `tar`, and `unzstd`; it refuses missing, extra, duplicated, non-contiguous, checksum-mismatched, manifest-mismatched, or oversized parts, verifies the complete archive hash and byte count, and only then extracts into a new destination. If Actions retention has expired, run **Actions → Rehydrate certified release for connectors**. That workflow requires the release asset set to match its checksum inventory exactly, binds the release tag to the manifest/evidence/consumer commit, verifies all three original build-workflow attestations, re-evaluates the finalized evidence, and only then recreates and attests connector-sized artifacts. It does not rebuild or silently recertify the payload.
+
+## Exact Anthropic Zeta23 consumer certificate
+
+`zeta23-profile.json` defines a separate, fail-closed consumer profile for
+[`anthropics/zeta-23-lean`](https://github.com/anthropics/zeta-23-lean) at
+commit `3635e74826a4c1fcece7d1cd2b6fa75e43a00510`. It requires the exact
+`lean-4.33.0-rc2` factory profile and Mathlib commit
+`51e6992efd06126df61a496bebf8f49482a4e129`; there is no 4.32-to-4.33
+compatibility shim.
+
+The consumer has two deliberately distinct verdicts:
+
+```text
+Z_core   = T AND S AND B AND A
+Z_strong = Z_core AND C_base AND C_multiplicity AND C_xiprime
+```
+
+- `T` authenticates and re-evaluates the factory certificate, verifies the
+  exact rc2 profile, reconstructs its hashed parts, records the actual Lean and
+  Lake binary hashes, and runs the Zeta core in Docker with `--network none`.
+- `S` requires the exact Zeta source commit and exact hashes/sizes for its
+  `lean-toolchain`, `lakefile.toml`, and `lake-manifest.json`. A changed tracked
+  source file rejects the certificate.
+- `B` requires exit code zero from `lake build` and
+  `lake build Solution Solution.Multiplicity Solution.XiPrime`, with no `sorry`
+  warning from `Zeta23/` or the Solution modules.
+- `A` parses the actual four `#print axioms` logs. Each of the 15 base, 12
+  multiplicity, and 6 XiPrime headline declarations must report exactly
+  `[propext, Classical.choice, Quot.sound]`.
+- Each `C_*` result starts from a fresh checkout with no existing Solution
+  olean, validates its source-owned comparator configuration, and requires the
+  pinned real `landrun`, matching `lean4export`, the Lean kernel replay, and the
+  independent `nanoda` kernel. A write-denial probe and the documented
+  unprivileged `systemd-run` boundary must pass. There is no fake-landrun
+  fallback.
+
+The bandwidth-one PairCeiling audit is reported separately. Its nine analytic
+declarations must use the standard three axioms, `LawN256_check` must use only
+`propext`, and `LawN256_edge` must be axiom-free. The result remains explicitly
+conditional on the displayed external `EnclOK` hypothesis; it is never folded
+into the unconditional Zeta headline.
+
+The successful job uploads and attests `zeta23-evidence.json`, its independently
+recomputed verdict, all command logs, source-tree inventory, tool hashes, and
+SHA-256 files as `zeta23-verification-evidence`. A build success by itself is
+not a strong certificate: only `strongVerified: true` after all three fresh
+comparator/nanoda runs is the strong result.
+
+All remote GitHub Actions used by the build, rehydration, and Zeta workflows are
+pinned to immutable commit SHAs. The offline Ubuntu verifier image is likewise
+pinned by registry digest; tool source commits, clean tracked working trees,
+executed binary hashes, reconstruction output, and sandbox logs remain
+part of the reviewable evidence boundary.
 
 ## Evidence API
 

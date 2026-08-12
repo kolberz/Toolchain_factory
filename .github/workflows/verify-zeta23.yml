@@ -1,0 +1,240 @@
+name: Verify exact Anthropic Zeta23 consumer
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: Portable-toolchain profile produced by the caller
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  attestations: write
+  id-token: write
+
+jobs:
+  verify:
+    if: ${{ inputs.profile == 'lean-4.33.0-rc2' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: '1.25.12'
+          cache: false
+
+      - name: Install verifier prerequisites
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes jq zstd
+          npm ci
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: portable-lean-toolchain-transport-index
+          path: zeta-consumer
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: portable-lean-toolchain-part-*
+          path: zeta-consumer
+          merge-multiple: true
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: portable-lean-toolchain-verification
+          path: zeta-consumer/verification
+
+      - name: Reconstruct exact rc2 portable toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p zeta-out/logs
+          chmod +x zeta-consumer/verify-and-reconstruct.sh
+          set +e
+          bash zeta-consumer/verify-and-reconstruct.sh zeta-consumer zeta-consumer/reconstructed \
+            > zeta-out/logs/toolchain-reconstruction.log 2>&1
+          reconstruction_exit=$?
+          set -e
+          cat zeta-out/logs/toolchain-reconstruction.log
+          jq -n \
+            --argjson exitCode "$reconstruction_exit" \
+            --arg logSha256 "$(sha256sum zeta-out/logs/toolchain-reconstruction.log | cut -d' ' -f1)" \
+            '{id:"toolchain-reconstruction",exitCode:$exitCode,logFile:"toolchain-reconstruction.log",logSha256:$logSha256}' \
+            > zeta-out/reconstruction-record.json
+          [[ $reconstruction_exit -eq 0 ]]
+
+      - name: Verify source attestations and base certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p zeta-out/logs
+          signer_workflow="$GITHUB_REPOSITORY/.github/workflows/build-portable-toolchain.yml"
+          source_ref="$GITHUB_REF"
+
+          set +e
+          gh attestation verify zeta-consumer/verification/certification-evidence.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer_workflow" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$source_ref" \
+            --deny-self-hosted-runners \
+            > zeta-out/logs/base-evidence-attestation.log 2>&1
+          evidence_attestation_exit=$?
+          gh attestation verify zeta-consumer/toolchain-manifest.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer_workflow" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$source_ref" \
+            --deny-self-hosted-runners \
+            > zeta-out/logs/toolchain-manifest-attestation.log 2>&1
+          manifest_attestation_exit=$?
+          npx tsx scripts/evaluate-evidence.ts \
+            zeta-consumer/verification/certification-evidence.json \
+            zeta-out/base-evidence-verdict.json \
+            > zeta-out/logs/base-evidence-evaluation.log 2>&1
+          base_evaluation_exit=$?
+          set -e
+
+          cat zeta-out/logs/base-evidence-attestation.log
+          cat zeta-out/logs/toolchain-manifest-attestation.log
+          cat zeta-out/logs/base-evidence-evaluation.log
+          [[ $evidence_attestation_exit -eq 0 && $manifest_attestation_exit -eq 0 && $base_evaluation_exit -eq 0 ]]
+
+          jq -n \
+            --argjson evidenceExit "$evidence_attestation_exit" \
+            --argjson manifestExit "$manifest_attestation_exit" \
+            --argjson evaluationExit "$base_evaluation_exit" \
+            --arg evidenceHash "$(sha256sum zeta-out/logs/base-evidence-attestation.log | cut -d' ' -f1)" \
+            --arg manifestHash "$(sha256sum zeta-out/logs/toolchain-manifest-attestation.log | cut -d' ' -f1)" \
+            --arg evaluationHash "$(sha256sum zeta-out/logs/base-evidence-evaluation.log | cut -d' ' -f1)" \
+            '[
+              {id:"base-evidence-attestation",exitCode:$evidenceExit,logFile:"base-evidence-attestation.log",logSha256:$evidenceHash},
+              {id:"toolchain-manifest-attestation",exitCode:$manifestExit,logFile:"toolchain-manifest-attestation.log",logSha256:$manifestHash},
+              {id:"base-evidence-evaluation",exitCode:$evaluationExit,logFile:"base-evidence-evaluation.log",logSha256:$evaluationHash}
+            ]' > zeta-out/authentication-records.json
+
+      - name: Clone exact Zeta23 and pinned verifier sources
+        run: |
+          set -euo pipefail
+          zeta_commit="$(jq -r '.source.commit' zeta23-profile.json)"
+          comparator_pin="$(jq -r '.comparator.pins.comparator' zeta23-profile.json)"
+          landrun_pin="$(jq -r '.comparator.pins.landrun' zeta23-profile.json)"
+          nanoda_pin="$(jq -r '.comparator.pins.nanoda' zeta23-profile.json)"
+
+          git clone https://github.com/anthropics/zeta-23-lean.git zeta-source
+          git -C zeta-source checkout --detach "$zeta_commit"
+          [[ "$(git -C zeta-source rev-parse HEAD)" == "$zeta_commit" ]]
+
+          mkdir -p zeta-tools/bin
+          git clone https://github.com/leanprover/comparator.git zeta-tools/comparator
+          git -C zeta-tools/comparator checkout --detach "$comparator_pin"
+          git clone https://github.com/zouuup/landrun.git zeta-tools/landrun
+          git -C zeta-tools/landrun checkout --detach "$landrun_pin"
+          git clone https://github.com/robsimmons/nanoda_lib.git zeta-tools/nanoda
+          git -C zeta-tools/nanoda checkout --detach "$nanoda_pin"
+
+      - name: Build exact verifier tools before network isolation
+        run: |
+          set -euo pipefail
+          portable="$PWD/zeta-consumer/reconstructed/portable-lean-toolchain"
+          export PATH="$portable/lean/bin:$PATH"
+          (cd zeta-tools/comparator && lake build comparator lean4export)
+          (cd zeta-tools/landrun && go build -mod=readonly -trimpath -o ../bin/landrun ./cmd/landrun)
+          (cd zeta-tools/nanoda && cargo build --locked --release)
+
+          expected_exporter="$(jq -r '.comparator.pins.lean4export' zeta23-profile.json)"
+          [[ "$(git -C zeta-tools/comparator/.lake/packages/lean4export rev-parse HEAD)" == "$expected_exporter" ]]
+          for checkout in \
+            zeta-tools/comparator \
+            zeta-tools/comparator/.lake/packages/lean4export \
+            zeta-tools/landrun \
+            zeta-tools/nanoda; do
+            [[ -z "$(git -C "$checkout" status --porcelain --untracked-files=no)" ]] || {
+              echo "tracked verifier source changed during build: $checkout" >&2
+              exit 70
+            }
+          done
+          sha256sum \
+            zeta-tools/comparator/.lake/build/bin/comparator \
+            zeta-tools/comparator/.lake/packages/lean4export/.lake/build/bin/lean4export \
+            zeta-tools/bin/landrun \
+            zeta-tools/nanoda/target/release/nanoda_bin \
+            | tee zeta-out/verifier-binary-sha256sums.txt
+
+      - name: Build offline, audit axioms, and run three fresh comparators
+        run: |
+          set -euo pipefail
+          docker build --tag lean-toolchain-offline-verifier --file scripts/offline-verifier.Dockerfile .
+          runner_uid="$(id -u)"
+          sudo loginctl enable-linger "$USER"
+          sudo systemctl start "user@${runner_uid}.service"
+          export XDG_RUNTIME_DIR="/run/user/${runner_uid}"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+          systemctl --user is-active default.target
+          chmod +x scripts/run-zeta23-verification.sh
+          bash scripts/run-zeta23-verification.sh \
+            zeta-consumer/reconstructed/portable-lean-toolchain \
+            zeta-consumer/verification/certification-evidence.json \
+            zeta-source \
+            zeta-out \
+            zeta-tools
+
+      - name: Bind authenticated toolchain records and evaluate strong evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq --slurpfile authentication zeta-out/authentication-records.json \
+            '.toolchain.authentication = $authentication[0]' \
+            zeta-out/zeta23-evidence.preliminary.json \
+            > zeta-out/zeta23-evidence.json
+          sha256sum zeta-out/zeta23-evidence.json > zeta-out/zeta23-evidence.json.sha256
+
+          npx tsx scripts/evaluate-zeta23-evidence.ts \
+            zeta-out/zeta23-evidence.json \
+            zeta-consumer/verification/certification-evidence.json \
+            zeta-consumer/toolchain-manifest.json \
+            zeta-out/logs \
+            zeta-out/core-source \
+            zeta-consumer/reconstructed/portable-lean-toolchain \
+            zeta-tools \
+            zeta-out/zeta23-verdict.json
+          jq -e '.strongVerified == true and .coreVerified == true' \
+            zeta-out/zeta23-verdict.json
+          sha256sum zeta-out/zeta23-verdict.json > zeta-out/zeta23-verdict.json.sha256
+
+      - name: Upload complete Zeta23 evidence and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: zeta23-verification-evidence
+          path: |
+            zeta-out/*.json
+            zeta-out/*.sha256
+            zeta-out/*.txt
+            zeta-out/logs/**
+            zeta-out/source-tree-sha256sums.txt
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 90
+
+      - name: Attest Zeta23 evidence
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: zeta-out/zeta23-evidence.json
+
+      - name: Attest Zeta23 verdict
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: zeta-out/zeta23-verdict.json

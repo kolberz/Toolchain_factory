@@ -12,15 +12,24 @@ on:
         options:
           - lean-4.32.2
           - lean-4.33.0-rc1
+          - lean-4.33.0-rc2
+      verify_zeta23:
+        description: Run the exact Anthropic Zeta23 consumer certificate (rc2 only)
+        required: true
+        default: false
+        type: boolean
   push:
     branches: [main]
     paths:
       - '.github/workflows/build-portable-toolchain.yml'
       - '.github/workflows/rehydrate-certified-release.yml'
+      - '.github/workflows/verify-zeta23.yml'
       - 'scripts/**'
       - 'MathlibSmoke.lean'
       - 'InvalidTheorem.lean'
       - 'certification.ts'
+      - 'zeta23-certification.ts'
+      - 'zeta23-profile.json'
       - 'toolchain-profiles.json'
       - 'tests/**'
 
@@ -37,8 +46,13 @@ jobs:
   app-verifier-tests:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Reject Zeta23 verification with a non-rc2 profile
+        if: ${{ inputs.verify_zeta23 == true && inputs.profile != 'lean-4.33.0-rc2' }}
+        run: |
+          echo 'verify_zeta23 requires profile lean-4.33.0-rc2' >&2
+          exit 64
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           package-manager-cache: false
@@ -56,7 +70,7 @@ jobs:
       matrix:
         builder: [1, 2]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - name: Install packaging prerequisites
         run: sudo apt-get update && sudo apt-get install --yes jq rsync zstd
       - name: Build and certify portable Lean + Lake + Mathlib
@@ -64,7 +78,7 @@ jobs:
           BUILDER_INSTANCE: ${{ matrix.builder }}
         run: bash scripts/build-portable-toolchain.sh
       - name: Upload deterministic builder fingerprint
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-fingerprint-${{ matrix.builder }}
           path: |
@@ -75,7 +89,7 @@ jobs:
           retention-days: 90
       - name: Set up Node for primary artifact publishing
         if: matrix.builder == 1
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           package-manager-cache: false
@@ -84,7 +98,7 @@ jobs:
         run: npm ci
       - name: Upload transport index
         if: matrix.builder == 1
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-transport-index
           path: out/transport-index/
@@ -99,7 +113,7 @@ jobs:
           output_json: out/uploaded-parts.json
       - name: Upload primary evidence for cross-builder finalization
         if: matrix.builder == 1
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: builder-1-verification-preliminary
           path: |
@@ -118,12 +132,12 @@ jobs:
           retention-days: 7
       - name: Attest the payload manifest
         if: matrix.builder == 1
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: out/toolchain-manifest.json
       - name: Upload failed-builder diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: builder-${{ matrix.builder }}-failure-diagnostics
           path: out/
@@ -135,21 +149,21 @@ jobs:
     needs: build-and-certify
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: reproducibility-fingerprint-1
           path: fingerprints/builder-1
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: reproducibility-fingerprint-2
           path: fingerprints/builder-2
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: builder-1-verification-preliminary
           path: final-verification
@@ -171,7 +185,7 @@ jobs:
           fingerprints/builder-2/reproducibility-fingerprint.json
       - name: Upload reproducibility failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reproducibility-failure-diagnostics
           path: |
@@ -194,7 +208,7 @@ jobs:
             echo "final evidence SHA-256: $(sha256sum final-verification/certification-evidence.json | cut -d' ' -f1)"
           } | tee -a final-verification/verification-summary.log
       - name: Upload finalized certificate and complete verification logs
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-verification
           path: final-verification/
@@ -202,7 +216,7 @@ jobs:
           compression-level: 6
           retention-days: 90
       - name: Attest the finalized certification evidence
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: final-verification/certification-evidence.json
 
@@ -211,24 +225,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           package-manager-cache: false
       - run: npm ci
       - name: Install consumer prerequisites
         run: sudo apt-get update && sudo apt-get install --yes jq zstd
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: portable-lean-toolchain-transport-index
           path: consumer
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: portable-lean-toolchain-part-*
           path: consumer
           merge-multiple: true
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: portable-lean-toolchain-verification
           path: consumer/verification
@@ -261,7 +275,7 @@ jobs:
             --arg evidenceSha256 "$(sha256sum consumer/verification/certification-evidence.json | cut -d' ' -f1)" \
             '{schemaVersion:"1.1.0",runId:$runId,commit:$commit,profileId:$profileId,artifactDownload:true,partChecksumVerificationExitCode:0,reconstructionExitCode:0,networkMode:"none",lakeBuildExitCode:0,smokeExitCode:0,evidenceSha256:$evidenceSha256}' \
             > consumer/consumer-receipt.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-consumer-receipt
           path: |
@@ -271,6 +285,13 @@ jobs:
           compression-level: 6
           retention-days: 90
       - name: Attest the post-upload consumer receipt
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: consumer/consumer-receipt.json
+
+  verify-zeta23:
+    if: ${{ inputs.verify_zeta23 == true && inputs.profile == 'lean-4.33.0-rc2' }}
+    needs: consume-uploaded-artifacts
+    uses: ./.github/workflows/verify-zeta23.yml
+    with:
+      profile: ${{ inputs.profile }}

@@ -1459,7 +1459,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     method: 'GET',
                     endpoint: '/api/toolchain/bootstrap',
                     desc: 'Returns the workflow, build script, uploaded artifact names, and certification status endpoint.',
-                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "3.1.0", "availableProfiles": ["lean-4.32.2", "lean-4.33.0-rc1"] }`
+                    responseSample: `{ "service": "Portable Lean Toolchain GitHub Actions Contract", "version": "3.1.0", "availableProfiles": ["lean-4.32.2", "lean-4.33.0-rc1", "lean-4.33.0-rc2"] }`
                   },
                   {
                     method: 'GET',
@@ -1489,7 +1489,7 @@ assert lean_toolchain == MANIFEST_ANCHORS["lean_toolchain"]`}
                     method: 'GET',
                     endpoint: '/api/manifest/anchors',
                     desc: 'Returns the immutable, allow-listed Lean + Mathlib profiles and the stable default profile.',
-                    responseSample: `{ "DEFAULT_PROFILE_ID": "lean-4.32.2", "PROFILES": { "lean-4.32.2": {...}, "lean-4.33.0-rc1": {...} } }`
+                    responseSample: `{ "DEFAULT_PROFILE_ID": "lean-4.32.2", "PROFILES": { "lean-4.32.2": {...}, "lean-4.33.0-rc1": {...}, "lean-4.33.0-rc2": {...} } }`
                   },
                   {
                     method: 'GET',

@@ -9,6 +9,7 @@ fi
 mathlib_dir="$(cd "$1" && pwd)"
 packages_dir="$mathlib_dir/.lake/packages"
 [[ -d "$packages_dir" ]] || { echo "missing dependency directory: $packages_dir" >&2; exit 65; }
+[[ -d "$mathlib_dir/.git" ]] || { echo "missing Mathlib Git metadata: $mathlib_dir/.git" >&2; exit 65; }
 
 canonicalized=0
 while IFS= read -r -d '' git_dir; do
@@ -44,7 +45,10 @@ while IFS= read -r -d '' git_dir; do
   [[ "$(git -C "$repository" rev-parse HEAD)" == "$head" ]]
   [[ "$(git -C "$repository" remote get-url origin)" == "$origin" ]]
   canonicalized=$((canonicalized + 1))
-done < <(find "$packages_dir" -mindepth 2 -maxdepth 2 -type d -name .git -print0 | sort -z)
+done < <(
+  printf '%s\0' "$mathlib_dir/.git"
+  find "$packages_dir" -mindepth 2 -maxdepth 2 -type d -name .git -print0
+)
 
 (( canonicalized > 0 )) || { echo "no dependency Git repositories found" >&2; exit 66; }
-echo "canonicalized deterministic Git metadata for $canonicalized locked dependencies"
+echo "canonicalized deterministic Git metadata for Mathlib and $((canonicalized - 1)) locked dependencies"

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0.0",
+  "profileId": "anthropic-zeta23-3635e748",
+  "requiredToolchainProfile": "lean-4.33.0-rc2",
+  "source": {
+    "repository": "anthropics/zeta-23-lean",
+    "commit": "3635e74826a4c1fcece7d1cd2b6fa75e43a00510"
+  },
+  "pinFiles": [
+    {
+      "path": "lean-toolchain",
+      "sha256": "0d3c76ccd8772d8bcbe207241421a760312b71a6aa82f84194391fdf5cb026d6",
+      "bytes": 29
+    },
+    {
+      "path": "lakefile.toml",
+      "sha256": "e029e0625348ef00f0e76a73c3e7e074ad7ed6baacbf88c8656e3d002de5ce13",
+      "bytes": 746
+    },
+    {
+      "path": "lake-manifest.json",
+      "sha256": "1847b362e15efd927e75aa8b5442e491f998e4a3f730f9dcaca9841f2957c448",
+      "bytes": 3200
+    }
+  ],
+  "mathlibCommit": "51e6992efd06126df61a496bebf8f49482a4e129",
+  "coreCommands": [
+    {
+      "id": "lean-version",
+      "command": "lean --version"
+    },
+    {
+      "id": "lake-build",
+      "command": "lake build"
+    },
+    {
+      "id": "solution-build",
+      "command": "lake build Solution Solution.Multiplicity Solution.XiPrime"
+    },
+    {
+      "id": "axioms-base",
+      "command": "lake env lean comparator/PrintAxioms.lean"
+    },
+    {
+      "id": "axioms-multiplicity",
+      "command": "lake env lean comparator/PrintAxioms/Multiplicity.lean"
+    },
+    {
+      "id": "axioms-xiprime",
+      "command": "lake env lean comparator/PrintAxioms/XiPrime.lean"
+    },
+    {
+      "id": "axioms-pair-ceiling",
+      "command": "lake env lean comparator/PrintAxioms/PairCeiling.lean"
+    }
+  ],
+  "headlineAxiomAudits": [
+    {
+      "id": "axioms-base",
+      "declarations": [
+        "two_thirds_on_critical_line",
+        "two_thirds_on_critical_line_cumulative",
+        "half_simple_on_critical_line",
+        "half_simple_on_critical_line_cumulative",
+        "three_quarters_distinct",
+        "three_quarters_distinct_cumulative",
+        "montgomery_taylor_on_critical_line",
+        "montgomery_taylor_simple_on_critical_line",
+        "montgomery_taylor_distinct",
+        "dirichlet_two_thirds_on_critical_line",
+        "dirichlet_half_simple_on_critical_line",
+        "dirichlet_three_quarters_distinct",
+        "dirichlet_montgomery_taylor_on_critical_line",
+        "dirichlet_montgomery_taylor_simple_on_critical_line",
+        "dirichlet_montgomery_taylor_distinct"
+      ]
+    },
+    {
+      "id": "axioms-multiplicity",
+      "declarations": [
+        "two_thirds_simple_on_critical_line",
+        "two_thirds_simple_on_critical_line_cumulative",
+        "five_sixths_distinct",
+        "five_sixths_distinct_cumulative",
+        "montgomery_taylor_simple_on_critical_line_mult",
+        "montgomery_taylor_simple_on_critical_line_mult_cumulative",
+        "montgomery_taylor_distinct_mult",
+        "montgomery_taylor_distinct_mult_cumulative",
+        "dirichlet_two_thirds_simple_on_critical_line",
+        "dirichlet_five_sixths_distinct",
+        "dirichlet_montgomery_taylor_simple_on_critical_line_mult",
+        "dirichlet_montgomery_taylor_distinct_mult"
+      ]
+    },
+    {
+      "id": "axioms-xiprime",
+      "declarations": [
+        "xiPrime_zeros_in_open_critical_strip",
+        "xiPrime_over_xi_re_pos",
+        "xiPrime_simple_zeros_on_critical_line",
+        "xiPrime_simple_zeros_on_critical_line_cumulative",
+        "xiPrime_simple_zeros_on_critical_line_quartic",
+        "xiPrime_simple_zeros_on_critical_line_quartic_cumulative"
+      ]
+    }
+  ],
+  "standardAxioms": [
+    "propext",
+    "Classical.choice",
+    "Quot.sound"
+  ],
+  "pairCeilingAxiomAudit": {
+    "id": "axioms-pair-ceiling",
+    "conditionalOn": "EnclOK",
+    "standardDeclarations": [
+      "Zeta23.PairCeiling.ceiling_stability",
+      "Zeta23.PairCeiling.ceiling_nearCUE",
+      "Zeta23.PairCeiling.lawN256_rows",
+      "Zeta23.PairCeiling.ceiling_law256",
+      "Zeta23.PairCeiling.ceiling_law256_decimal",
+      "Zeta23.PairCeiling.ceiling_signed",
+      "Zeta23.PairCeiling.ceiling_nearCUE_signed",
+      "Zeta23.PairCeiling.ceiling_law256_signed",
+      "Zeta23.PairCeiling.D1_nonneg_of_edgeNonneg"
+    ],
+    "propextOnlyDeclaration": "Zeta23.PairCeiling.LawN256_check",
+    "axiomFreeDeclaration": "Zeta23.PairCeiling.LawN256_edge"
+  },
+  "comparator": {
+    "successMessage": "Your solution is okay!",
+    "permittedAxioms": [
+      "propext",
+      "Quot.sound",
+      "Classical.choice"
+    ],
+    "pins": {
+      "comparator": "75c730e9b6ef5c2c3b334fad7c3d51fe20624c88",
+      "lean4export": "9fb131bb100eb32ccf6836f14e4f8328d13b6792",
+      "landrun": "5ed4a3db3a4ad930d577215c6b9abaa19df7f99f",
+      "nanoda": "418320295890faed83a96fd97907b12a3b6728c2"
+    },
+    "configs": [
+      {
+        "id": "base",
+        "path": "comparator/config.json",
+        "theoremCount": 15
+      },
+      {
+        "id": "multiplicity",
+        "path": "comparator/config-multiplicity.json",
+        "theoremCount": 12
+      },
+      {
+        "id": "xiprime",
+        "path": "comparator/config-xiprime.json",
+        "theoremCount": 6
+      }
+    ]
+  }
+}

@@ -115,9 +115,10 @@ bash "$repo_root/scripts/canonicalize-dependency-git.sh" "$mathlib_dir" | tee "$
 echo "Packaging Lean, Lake, Mathlib sources, dependencies, and compiled cache."
 mkdir -p "$package_dir/portable-lean-toolchain"
 cp -a "$lean_home" "$package_dir/portable-lean-toolchain/lean"
-# Exclude only Mathlib's top-level clone history. Lake needs each locked
-# dependency's .git metadata to validate it without attempting a network clone.
-rsync -a --exclude='/.git' "$mathlib_dir/" "$package_dir/portable-lean-toolchain/mathlib/"
+# Keep the canonicalized top-level Mathlib Git metadata as well as every locked
+# dependency's metadata. This lets an offline consumer mount packaged Mathlib as
+# a dependency of another exact-pin Lake project without Lake attempting a clone.
+rsync -a "$mathlib_dir/" "$package_dir/portable-lean-toolchain/mathlib/"
 printf '%s\n' "$MATHLIB_COMMIT" > "$package_dir/portable-lean-toolchain/MATHLIB_COMMIT"
 cp "$repo_root/scripts/verify-and-reconstruct.sh" "$package_dir/portable-lean-toolchain/verify-and-reconstruct.sh"
 chmod +x "$package_dir/portable-lean-toolchain/verify-and-reconstruct.sh"
