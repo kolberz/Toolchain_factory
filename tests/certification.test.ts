@@ -70,6 +70,14 @@ test('derives FINAL VERIFIED for the exact Lean 4.33.0-rc1 profile', () => {
   assert.equal(result.canonicalAnchors.leanToolchain, 'leanprover/lean4:v4.33.0-rc1');
 });
 
+test('derives FINAL VERIFIED for the exact Lean 4.33.0-rc2 profile', () => {
+  const result = evaluateCertificationEvidence(validEvidence('lean-4.33.0-rc2'));
+  assert.equal(result.finalVerified, true);
+  assert.equal(result.canonicalProfileId, 'lean-4.33.0-rc2');
+  assert.equal(result.canonicalAnchors.leanToolchain, 'leanprover/lean4:v4.33.0-rc2');
+  assert.equal(result.canonicalAnchors.mathlibCommit, '51e6992efd06126df61a496bebf8f49482a4e129');
+});
+
 test('continues to verify legacy schema 3.0.0 evidence against the 4.32.2 profile', () => {
   const evidence = validEvidence();
   evidence.schemaVersion = '3.0.0';
@@ -83,6 +91,12 @@ test('continues to verify legacy schema 3.0.0 evidence against the 4.32.2 profil
 test('rejects mixed-version profile anchors', () => {
   const evidence = validEvidence('lean-4.33.0-rc1');
   evidence.anchors.mathlibCommit = CANONICAL_ANCHORS.mathlibCommit;
+  assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
+});
+
+test('rejects rc2 evidence carrying an rc1 Mathlib anchor', () => {
+  const evidence = validEvidence('lean-4.33.0-rc2');
+  evidence.anchors.mathlibCommit = CANONICAL_PROFILES['lean-4.33.0-rc1'].mathlibCommit;
   assert.equal(evaluateCertificationEvidence(evidence).finalVerified, false);
 });
 

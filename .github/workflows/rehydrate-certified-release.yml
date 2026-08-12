@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24'
           package-manager-cache: false
@@ -129,7 +129,7 @@ jobs:
             hydrated/original-attestations-verified.json \
             hydrated/index/
       - name: Upload transport index
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-transport-index
           path: hydrated/index/
@@ -142,7 +142,7 @@ jobs:
           parts_directory: hydrated
           output_json: hydrated/rehydrated-parts.json
       - name: Upload certified verification evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-verification
           path: hydrated/verification/
@@ -150,7 +150,7 @@ jobs:
           compression-level: 6
           retention-days: 90
       - name: Attest the rehydrated release manifest
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: hydrated/toolchain-manifest.json
       - name: Write authenticated rehydration receipt
@@ -162,11 +162,11 @@ jobs:
             '{schemaVersion:"1.0.0",authentication:$authentication[0],releaseAssetsSha256:$releaseAssetsSha256,transport:$parts[0]}' \
             > hydrated/rehydration-receipt.json
       - name: Attest the authenticated rehydration receipt
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: hydrated/rehydration-receipt.json
       - name: Publish rehydration receipt
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: portable-lean-toolchain-rehydration-receipt
           path: |
