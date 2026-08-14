@@ -31,6 +31,7 @@ jobs:
         working-directory: v89-harness
         run: |
           set -euo pipefail
+          sed -i '1s|import Std.Tactic.Omega|import Lean.Elab.Tactic.Omega|' V89Harness.lean
           lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
           grep -F 'run_historyFind_to_sign' V89_KERNEL.log
           if grep -F 'sorryAx' V89_KERNEL.log; then
