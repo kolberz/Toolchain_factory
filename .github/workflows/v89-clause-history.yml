@@ -85,6 +85,24 @@ jobs:
               raise SystemExit('run_add block not found')
           s = s.replace(old_run_add, new_run_add, 1)
 
+          helper = '''
+          theorem replicate_append_same_marker_harness
+              (n : Nat) (a : Sym) (tail : List Sym) :
+              List.replicate n a ++ a :: tail =
+                List.replicate (n + 1) a ++ tail := by
+            induction n with
+            | zero => rfl
+            | succ n ih =>
+                rw [List.replicate_succ, List.replicate_succ]
+                exact congrArg (fun xs => a :: xs) ih
+
+          '''
+          anchor = 'theorem run_historyFind_to_sign\n'
+          if helper.strip() not in s:
+              if anchor not in s:
+                  raise SystemExit('history theorem anchor not found')
+              s = s.replace(anchor, helper + anchor, 1)
+
           old_hfirst = '''    cases j with
               | zero => simp [keepLeftScanConfig, List.append_assoc]
               | succ n =>
@@ -112,47 +130,44 @@ jobs:
               raise SystemExit('hlive block not found')
           s = s.replace(old_hlive, new_hlive, 1)
 
-          cursor_start = s.index('  have hcursor\' :')
+          cursor_start = s.index("  have hcursor' :")
           raw_start = s.index('  have hraw :', cursor_start)
-          new_cursor = '''  have hcursor' :
-              run (j + 1 + p)
-                (configAt (.clauseToCursor f c) (.clauseSpent :: baseLeft)
-                  (cursorMarkers ++ literalRight)) =
-              configAt (.clauseToCursor f c)
-                (List.replicate p .processed ++ .clauseEnd ::
-                  List.replicate (j + 1) .clauseSpent ++ baseLeft)
-                literalRight := by
-            have hlen : cursorMarkers.length = j + 1 + p := by
-              unfold cursorMarkers spentMarkers
-              simp only [List.length_append, List.length_replicate, List.length_cons]
-              omega
-            have hrep :
-                List.replicate (j + 1) clauseSpent =
-                  List.replicate j clauseSpent ++ [clauseSpent] := by
-              induction j with
-              | zero => rfl
-              | succ j ih =>
-                  simp [List.replicate_succ, ih]
-            rw [← hlen]
-            rw [hcursor]
-            unfold cursorMarkers spentMarkers baseLeft literalRight
-            rw [hrep]
-            simp [List.reverse_append, List.append_assoc]
-          '''
+          new_cursor = "\n".join([
+              "  have hcursor' :",
+              "      run (j + 1 + p)",
+              "        (configAt (.clauseToCursor f c) (.clauseSpent :: baseLeft)",
+              "          (cursorMarkers ++ literalRight)) =",
+              "        configAt (.clauseToCursor f c)",
+              "          (List.replicate p .processed ++ .clauseEnd ::",
+              "            List.replicate (j + 1) .clauseSpent ++ baseLeft)",
+              "          literalRight := by",
+              "    have hlen : cursorMarkers.length = j + 1 + p := by",
+              "      unfold cursorMarkers spentMarkers",
+              "      simp only [List.length_append, List.length_replicate, List.length_cons]",
+              "      omega",
+              "    rw [← hlen]",
+              "    rw [hcursor]",
+              "    unfold cursorMarkers spentMarkers baseLeft literalRight",
+              "    simp [List.reverse_append, List.replicate_succ, List.append_assoc,",
+              "      replicate_append_same_marker_harness]",
+              "",
+          ])
           s = s[:cursor_start] + new_cursor + s[raw_start:]
 
           raw_start = s.index('  have hraw :')
           compose_start = s.index('  rw [show p + 2*j + 4', raw_start)
-          new_raw = '''  have hraw :
-              run 1 (configAt (.clauseToCursor f c)
-                (List.replicate p .processed ++ .clauseEnd ::
-                  List.replicate (j + 1) .clauseSpent ++ baseLeft) literalRight) =
-              historySign f c j k p sign literalRest outerLeft tail := by
-            unfold literalRight
-            cases sign <;>
-              simp [run, stepConfig, transition, configAt, historySign, baseLeft,
-                List.append_assoc]
-          '''
+          new_raw = "\n".join([
+              "  have hraw :",
+              "      run 1 (configAt (.clauseToCursor f c)",
+              "        (List.replicate p .processed ++ .clauseEnd ::",
+              "          List.replicate (j + 1) .clauseSpent ++ baseLeft) literalRight) =",
+              "        historySign f c j k p sign literalRest outerLeft tail := by",
+              "    unfold literalRight",
+              "    cases sign <;>",
+              "      simp [run, stepConfig, transition, configAt, historySign, baseLeft,",
+              "        List.append_assoc]",
+              "",
+          ])
           s = s[:raw_start] + new_raw + s[compose_start:]
           p.write_text(s)
           PY
