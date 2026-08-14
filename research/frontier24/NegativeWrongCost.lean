@@ -1,4 +1,4 @@
-import «Frontier24»
+import Frontier24
 
 open WTCF24
 
