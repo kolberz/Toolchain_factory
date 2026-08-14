@@ -1,0 +1,6 @@
+name = "v89_clause_history_harness"
+version = "0.1.0"
+defaultTargets = ["V89Harness"]
+
+[[lean_lib]]
+name = "V89Harness"
