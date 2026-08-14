@@ -67,10 +67,9 @@ theorem indexedStep_true_iff {m v : Nat} {s : ResidueState m} {r : Fin m} :
       · rcases ht with ⟨q, hsq, hmod⟩
         right
         apply any_allFin_true_iff.mpr
-        have hd : decide ((v + q.val) % m = r.val) = true := decide_eq_true hmod
-        have hq : s q && decide ((v + q.val) % m = r.val) = true := by
-          simpa only [Bool.and_eq_true] using And.intro hsq hd
-        exact ⟨q, hq⟩
+        refine ⟨q, ?_⟩
+        simp only [Bool.and_eq_true]
+        exact ⟨hsq, decide_eq_true hmod⟩
     simpa [indexedStep] using hor
 
 /-- Exact source semantics obey the same skip/take recurrence as the indexed transition. -/
