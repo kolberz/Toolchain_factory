@@ -56,7 +56,8 @@ theorem indexedStep_true_iff {m v : Nat} {s : ResidueState m} {r : Fin m} :
     · exact Or.inl hr
     · right
       rcases any_allFin_true_iff.mp ha with ⟨q, hq⟩
-      have hb := Bool.and_eq_true.mp hq
+      have hb : s q = true ∧ decide ((v + q.val) % m = r.val) = true := by
+        simpa only [Bool.and_eq_true] using hq
       exact ⟨q, hb.1, of_decide_eq_true hb.2⟩
   · intro h
     have hor : s r = true ∨
@@ -66,8 +67,10 @@ theorem indexedStep_true_iff {m v : Nat} {s : ResidueState m} {r : Fin m} :
       · rcases ht with ⟨q, hsq, hmod⟩
         right
         apply any_allFin_true_iff.mpr
-        refine ⟨q, Bool.and_eq_true.mpr ⟨hsq, ?_⟩⟩
-        exact decide_eq_true hmod
+        have hd : decide ((v + q.val) % m = r.val) = true := decide_eq_true hmod
+        have hq : s q && decide ((v + q.val) % m = r.val) = true := by
+          simpa only [Bool.and_eq_true] using And.intro hsq hd
+        exact ⟨q, hq⟩
     simpa [indexedStep] using hor
 
 /-- Exact source semantics obey the same skip/take recurrence as the indexed transition. -/
@@ -246,7 +249,7 @@ theorem chooseCosted_sound (vals : List Nat) (target : Nat) (mods : List Nat) :
   | some c => exact no_exact_witness_of_costed c
 
 /-- Existing GCD branch wrapped as data so it can live in `Option`. -/
-structure ExistingGCDProof (vals : List Nat) (target : Nat) where
+structure ExistingGCDProof (vals : List Nat) (target : Nat) : Type where
   proof : ¬ ∃ bits : List Bool,
     bits.length = vals.length ∧ selectedValue bits vals = target
 
