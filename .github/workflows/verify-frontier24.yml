@@ -40,23 +40,27 @@ jobs:
             > ../../frontier24-evidence/logs/Frontier24.log 2>&1
           cat ../../frontier24-evidence/logs/Frontier24.log
 
-      - name: Run negative controls
+      - name: Run semantic negative controls
         shell: bash
         run: |
           set -euo pipefail
           cd research/frontier24
           status=0
           for f in NegativeWrongCost.lean NegativeWrongChoice.lean NegativeFalseReachable.lean NegativeWrongSlotCount.lean; do
+            log="../../frontier24-evidence/logs/${f%.lean}.log"
             set +e
-            lean "$f" > "../../frontier24-evidence/logs/${f%.lean}.log" 2>&1
+            LEAN_PATH=. lean "$f" > "$log" 2>&1
             rc=$?
             set -e
-            cat "../../frontier24-evidence/logs/${f%.lean}.log"
+            cat "$log"
             if [[ $rc -eq 0 ]]; then
               echo "negative control unexpectedly compiled: $f" >&2
               status=1
+            elif grep -Eqi 'unknown module|unknown module prefix|file.*not found' "$log"; then
+              echo "negative control failed for import/infrastructure reason: $f" >&2
+              status=1
             else
-              echo "$f: REJECTED as required"
+              echo "$f: SEMANTICALLY REJECTED as required"
             fi
           done
           exit "$status"
@@ -75,10 +79,10 @@ jobs:
           cp /tmp/lean-version.txt frontier24-evidence/lean-version.txt
           printf '%s\n' \
             'Frontier24 positive core: PASS' \
-            'NegativeWrongCost: REJECTED' \
-            'NegativeWrongChoice: REJECTED' \
-            'NegativeFalseReachable: REJECTED' \
-            'NegativeWrongSlotCount: REJECTED' \
+            'NegativeWrongCost: SEMANTICALLY_REJECTED' \
+            'NegativeWrongChoice: SEMANTICALLY_REJECTED' \
+            'NegativeFalseReachable: SEMANTICALLY_REJECTED' \
+            'NegativeWrongSlotCount: SEMANTICALLY_REJECTED' \
             > frontier24-evidence/VERIFICATION.txt
 
       - name: Upload Frontier 24 evidence
