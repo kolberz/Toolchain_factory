@@ -37,7 +37,11 @@ jobs:
           s = p.read_text()
           s = s.replace('import Std.Tactic.Omega', 'import Lean.Elab.Tactic.Omega', 1)
           s = s.replace('open Sym State Move', 'open Sym State', 1)
-          s = s.replace('(fun s => s = .clauseSpent)', '(fun s => s = clauseSpent)', 1)
+          s = s.replace('(fun s => s = .clauseSpent)', '(fun s => s = clauseSpent)')
+          s = s.replace('let spentMarkers := List.replicate j .clauseSpent',
+                        'let spentMarkers : List Sym := List.replicate j clauseSpent', 1)
+          s = s.replace('          exact hrec\n',
+                        '          simpa [List.reverse_cons, List.append_assoc] using hrec\n', 1)
           old = '''theorem run_add (m n : Nat) (config : Config) :
               run (m + n) config = run n (run m config) := by
             induction m generalizing config with
