@@ -75,28 +75,23 @@ jobs:
                   rw [step_clauseFind_clauseEnd]
                   simp [keepLeftScanConfig, List.append_assoc]
           '''
-          new_hfirst = '''    cases j with
-              | zero =>
-                  rw [List.replicate_succ]
-                  rw [step_clauseFind_clauseEnd]
-                  simp [keepLeftScanConfig, List.append_assoc]
-              | succ n =>
-                  simp only [List.replicate_succ, List.cons_append]
-                  rw [step_clauseFind_clauseEnd]
-                  simp [keepLeftScanConfig, List.append_assoc]
+          new_hfirst = '''    cases j <;>
+              simp [keepLeftScanConfig, run, stepConfig, transition, configAt,
+                List.replicate_succ, List.append_assoc]
           '''
           if old_hfirst not in s:
               raise SystemExit('hfirst block not found')
           s = s.replace(old_hfirst, new_hfirst, 1)
-          s = s.replace('''    rw [run_one, step_clauseFind_live]
+          old_hlive = '''    rw [run_one, step_clauseFind_live]
               unfold cursorMarkers spentMarkers
               simp [List.append_assoc]
-          ''', '''    rw [run_one]
-              simp only [List.cons_append]
-              rw [step_clauseFind_live]
-              unfold cursorMarkers spentMarkers
-              simp [List.append_assoc]
-          ''', 1)
+          '''
+          new_hlive = '''    unfold cursorMarkers spentMarkers
+              simp [run, stepConfig, transition, configAt, List.append_assoc]
+          '''
+          if old_hlive not in s:
+              raise SystemExit('hlive block not found')
+          s = s.replace(old_hlive, new_hlive, 1)
           old_cursor = '''    have hlen : cursorMarkers.length = j + 1 + p := by
               unfold cursorMarkers spentMarkers
               simp
@@ -123,14 +118,20 @@ jobs:
           if old_cursor not in s:
               raise SystemExit('cursor block not found')
           s = s.replace(old_cursor, new_cursor, 1)
-          s = s.replace('''    rw [run_one]
+          old_hraw = '''    rw [run_one]
               unfold literalRight
               rw [step_clauseToCursor_raw]
-          ''', '''    rw [run_one]
-              unfold literalRight
-              simp only [List.cons_append]
-              rw [step_clauseToCursor_raw]
-          ''', 1)
+              unfold historySign baseLeft
+              simp [List.append_assoc]
+          '''
+          new_hraw = '''    unfold literalRight
+              cases sign <;>
+                simp [run, stepConfig, transition, configAt, historySign, baseLeft,
+                  List.append_assoc]
+          '''
+          if old_hraw not in s:
+              raise SystemExit('hraw block not found')
+          s = s.replace(old_hraw, new_hraw, 1)
           p.write_text(s)
           PY
           lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
