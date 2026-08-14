@@ -8,7 +8,7 @@ def selectedValue : List Bool → List Nat → Nat
   | _, [] => 0
   | b :: bs, v :: vs => (if b then v else 0) + selectedValue bs vs
 
-/-- Fixed-size indexed residue state.  There are exactly `m` addressable slots. -/
+/-- Fixed-size indexed residue state. There are exactly `m` addressable slots. -/
 abbrev ResidueState (m : Nat) := Fin m → Bool
 
 /-- Canonical enumeration of every slot in a fixed-size residue state. -/
@@ -21,7 +21,7 @@ def allFin (m : Nat) : List (Fin m) := List.ofFn (fun i : Fin m => i)
 def initialState (m : Nat) : ResidueState m :=
   fun r => decide (r.val = 0)
 
-/-- One fixed-index transition.  For each destination residue, scan all predecessor slots. -/
+/-- One fixed-index transition. For each destination residue, scan all predecessor slots. -/
 def indexedStep (m v : Nat) (s : ResidueState m) : ResidueState m :=
   fun r =>
     s r || (allFin m).any (fun q =>
@@ -47,7 +47,28 @@ theorem indexedStep_true_iff {m v : Nat} {s : ResidueState m} {r : Fin m} :
     indexedStep m v s r = true ↔
       s r = true ∨
         ∃ q : Fin m, s q = true ∧ (v + q.val) % m = r.val := by
-  simp [indexedStep, any_allFin_true_iff]
+  constructor
+  · intro h
+    have hor : s r = true ∨
+        (allFin m).any (fun q => s q && decide ((v + q.val) % m = r.val)) = true := by
+      simpa [indexedStep] using h
+    rcases hor with hr | ha
+    · exact Or.inl hr
+    · right
+      rcases any_allFin_true_iff.mp ha with ⟨q, hq⟩
+      have hb := Bool.and_eq_true.mp hq
+      exact ⟨q, hb.1, of_decide_eq_true hb.2⟩
+  · intro h
+    have hor : s r = true ∨
+        (allFin m).any (fun q => s q && decide ((v + q.val) % m = r.val)) = true := by
+      rcases h with hr | ht
+      · exact Or.inl hr
+      · rcases ht with ⟨q, hsq, hmod⟩
+        right
+        apply any_allFin_true_iff.mpr
+        refine ⟨q, Bool.and_eq_true.mpr ⟨hsq, ?_⟩⟩
+        exact decide_eq_true hmod
+    simpa [indexedStep] using hor
 
 /-- Exact source semantics obey the same skip/take recurrence as the indexed transition. -/
 theorem exactReachable_cons {m v : Nat} (hm : 0 < m) (vals : List Nat) (r : Fin m) :
@@ -91,7 +112,7 @@ theorem indexedRun_exact {m : Nat} (hm : 0 < m) (vals : List Nat) (r : Fin m) :
     indexedRun m vals r = true ↔ ExactReachable m vals r := by
   induction vals generalizing r with
   | nil =>
-      simp [indexedRun, initialState, ExactReachable, selectedValue, hm]
+      simp [indexedRun, initialState, ExactReachable, selectedValue, eq_comm]
   | cons v vs ih =>
       rw [indexedRun, indexedStep_true_iff, exactReachable_cons hm]
       constructor
@@ -130,7 +151,7 @@ theorem transitionWork_from_slots (m : Nat) :
 theorem fullRunWork_exact (m : Nat) (vals : List Nat) :
     fullRunWork m vals = vals.length * (m * m) := by
   induction vals with
-  | nil => rfl
+  | nil => simp [fullRunWork]
   | cons v vs ih =>
       simp [fullRunWork, transitionWork, ih, Nat.succ_mul, Nat.add_comm]
 
@@ -224,8 +245,13 @@ theorem chooseCosted_sound (vals : List Nat) (target : Nat) (mods : List Nat) :
   | none => trivial
   | some c => exact no_exact_witness_of_costed c
 
+/-- Existing GCD branch wrapped as data so it can live in `Option`. -/
+structure ExistingGCDProof (vals : List Nat) (target : Nat) where
+  proof : ¬ ∃ bits : List Bool,
+    bits.length = vals.length ∧ selectedValue bits vals = target
+
 /-- Abstract portfolio adapter: existing GCD proof first, new costed residue proof second,
-    LRAT obligation last.  The prior branches are passed through unchanged. -/
+    LRAT obligation last. The prior branches are passed through unchanged. -/
 inductive PortfolioResult (vals : List Nat) (target : Nat) where
   | gcd (proof : ¬ ∃ bits : List Bool,
       bits.length = vals.length ∧ selectedValue bits vals = target)
@@ -234,11 +260,10 @@ inductive PortfolioResult (vals : List Nat) (target : Nat) where
 
 /-- Semantics-preserving GCD → costed residue → LRAT adapter. -/
 def choosePortfolio (vals : List Nat) (target : Nat) (mods : List Nat)
-    (existingGCD : Option (¬ ∃ bits : List Bool,
-      bits.length = vals.length ∧ selectedValue bits vals = target)) :
+    (existingGCD : Option (ExistingGCDProof vals target)) :
     PortfolioResult vals target :=
   match existingGCD with
-  | some h => .gcd h
+  | some h => .gcd h.proof
   | none =>
       match chooseCosted vals target mods with
       | some c => .residue c
@@ -246,8 +271,7 @@ def choosePortfolio (vals : List Nat) (target : Nat) (mods : List Nat)
 
 /-- Every proof-producing portfolio branch is sound; the LRAT branch remains an obligation. -/
 theorem portfolio_sound (vals : List Nat) (target : Nat) (mods : List Nat)
-    (existingGCD : Option (¬ ∃ bits : List Bool,
-      bits.length = vals.length ∧ selectedValue bits vals = target)) :
+    (existingGCD : Option (ExistingGCDProof vals target)) :
     match choosePortfolio vals target mods existingGCD with
     | .gcd h => ¬ ∃ bits : List Bool,
         bits.length = vals.length ∧ selectedValue bits vals = target
@@ -256,7 +280,7 @@ theorem portfolio_sound (vals : List Nat) (target : Nat) (mods : List Nat)
     | .lrat => True := by
   unfold choosePortfolio
   cases existingGCD with
-  | some h => exact h
+  | some h => exact h.proof
   | none =>
       cases hc : chooseCosted vals target mods with
       | none => trivial
