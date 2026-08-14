@@ -1,0 +1,77 @@
+name: V89 Integrated Actual V88 Kernel Gate
+
+on:
+  push:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-integrated/**'
+      - '.github/workflows/v89-integrated-actual.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-v88:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct and verify exact v88 closure
+        run: |
+          set -euo pipefail
+          mkdir -p v89-integrated/actual-src
+          cat v89-integrated/xzchunks/part_* | tr -d '\r\n' | base64 -d > v89-integrated/v89_closure.tar.xz
+          echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
+          sha256sum v89-integrated/v89_closure.tar.xz | tee v89-integrated/V89_CLOSURE_SHA256.txt
+          tar -xJf v89-integrated/v89_closure.tar.xz -C v89-integrated/actual-src
+          test "$(find v89-integrated/actual-src -type f | wc -l)" -eq 82
+          test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          grep -F '"packages": []' v89-integrated/actual-src/lake-manifest.json
+
+      - name: Set up exact Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-integrated/actual-src
+          auto-config: true
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+
+      - name: Build actual v88 transitive closure
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase 2>&1 | tee ../V89_ACTUAL_BUILD.log
+
+      - name: Kernel-audit actual clause-history theorem
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          cat > V89ActualGate.lean <<'LEAN'
+          import OpenProblems.Complexity.SATMachineClauseHistoryPhase
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_clauseHistoryFind_to_literalSign
+          LEAN
+          lake env lean V89ActualGate.lean 2>&1 | tee ../V89_ACTUAL_KERNEL.log
+          grep -F 'run_clauseHistoryFind_to_literalSign' ../V89_ACTUAL_KERNEL.log
+          if grep -F 'sorryAx' ../V89_ACTUAL_KERNEL.log; then
+            echo 'unexpected sorryAx in actual v88 theorem closure' >&2
+            exit 1
+          fi
+          sha256sum OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean | tee ../SATMachineClauseHistoryPhase.lean.sha256
+          lean --version | tee -a ../V89_ACTUAL_KERNEL.log
+          lake --version | tee -a ../V89_ACTUAL_KERNEL.log
+
+      - name: Upload actual-source kernel evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-integrated-actual-v88-kernel-evidence
+          path: |
+            v89-integrated/V89_CLOSURE_SHA256.txt
+            v89-integrated/V89_ACTUAL_BUILD.log
+            v89-integrated/V89_ACTUAL_KERNEL.log
+            v89-integrated/SATMachineClauseHistoryPhase.lean.sha256
+            v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
