@@ -41,8 +41,8 @@ jobs:
           s = s.replace('let spentMarkers := List.replicate j .clauseSpent',
                         'let spentMarkers : List Sym := List.replicate j clauseSpent', 1)
           s = s.replace('          exact hrec\n',
-                        '          simpa [List.reverse_cons, List.append_assoc] using hrec\n', 1)
-          old = '''theorem run_add (m n : Nat) (config : Config) :
+                        '          simpa [keepLeftScanConfig, List.reverse_cons, List.append_assoc] using hrec\n', 1)
+          old_run_add = '''theorem run_add (m n : Nat) (config : Config) :
               run (m + n) config = run n (run m config) := by
             induction m generalizing config with
             | zero => rfl
@@ -53,7 +53,7 @@ jobs:
                 change run n (run (m + 1) config) = _
                 rfl
           '''
-          new = '''theorem run_add (m n : Nat) (config : Config) :
+          new_run_add = '''theorem run_add (m n : Nat) (config : Config) :
               run (m + n) config = run n (run m config) := by
             induction m generalizing config with
             | zero =>
@@ -64,9 +64,74 @@ jobs:
                   run n (run m (stepConfig config))
                 exact ih (config := stepConfig config)
           '''
-          if old not in s:
+          if old_run_add not in s:
               raise SystemExit('run_add block not found')
-          p.write_text(s.replace(old, new, 1))
+          s = s.replace(old_run_add, new_run_add, 1)
+          old_hfirst = '''    cases j with
+              | zero => simp [keepLeftScanConfig, List.append_assoc]
+              | succ n =>
+                  rw [List.replicate_succ]
+                  simp only [List.cons_append]
+                  rw [step_clauseFind_clauseEnd]
+                  simp [keepLeftScanConfig, List.append_assoc]
+          '''
+          new_hfirst = '''    cases j with
+              | zero =>
+                  rw [List.replicate_succ]
+                  rw [step_clauseFind_clauseEnd]
+                  simp [keepLeftScanConfig, List.append_assoc]
+              | succ n =>
+                  simp only [List.replicate_succ, List.cons_append]
+                  rw [step_clauseFind_clauseEnd]
+                  simp [keepLeftScanConfig, List.append_assoc]
+          '''
+          if old_hfirst not in s:
+              raise SystemExit('hfirst block not found')
+          s = s.replace(old_hfirst, new_hfirst, 1)
+          s = s.replace('''    rw [run_one, step_clauseFind_live]
+              unfold cursorMarkers spentMarkers
+              simp [List.append_assoc]
+          ''', '''    rw [run_one]
+              simp only [List.cons_append]
+              rw [step_clauseFind_live]
+              unfold cursorMarkers spentMarkers
+              simp [List.append_assoc]
+          ''', 1)
+          old_cursor = '''    have hlen : cursorMarkers.length = j + 1 + p := by
+              unfold cursorMarkers spentMarkers
+              simp
+            rw [← hlen, hcursor]
+            unfold cursorMarkers spentMarkers baseLeft literalRight
+            simp [List.reverse_append, List.replicate_succ, List.append_assoc]
+          '''
+          new_cursor = '''    have hlen : cursorMarkers.length = j + 1 + p := by
+              unfold cursorMarkers spentMarkers
+              simp only [List.length_append, List.length_replicate, List.length_cons]
+              omega
+            have hrep :
+                List.replicate (j + 1) clauseSpent =
+                  List.replicate j clauseSpent ++ [clauseSpent] := by
+              induction j with
+              | zero => rfl
+              | succ j ih =>
+                  simp [List.replicate_succ, ih]
+            rw [← hlen, hcursor]
+            unfold cursorMarkers spentMarkers baseLeft literalRight
+            rw [hrep]
+            simp [List.reverse_append, List.append_assoc]
+          '''
+          if old_cursor not in s:
+              raise SystemExit('cursor block not found')
+          s = s.replace(old_cursor, new_cursor, 1)
+          s = s.replace('''    rw [run_one]
+              unfold literalRight
+              rw [step_clauseToCursor_raw]
+          ''', '''    rw [run_one]
+              unfold literalRight
+              simp only [List.cons_append]
+              rw [step_clauseToCursor_raw]
+          ''', 1)
+          p.write_text(s)
           PY
           lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
           grep -F 'run_historyFind_to_sign' V89_KERNEL.log
