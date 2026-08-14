@@ -40,8 +40,25 @@ jobs:
           s = s.replace('(fun s => s = .clauseSpent)', '(fun s => s = clauseSpent)')
           s = s.replace('let spentMarkers := List.replicate j .clauseSpent',
                         'let spentMarkers : List Sym := List.replicate j clauseSpent', 1)
-          s = s.replace('          exact hrec\n',
-                        '          simpa [keepLeftScanConfig, List.reverse_cons, List.append_assoc] using hrec\n', 1)
+
+          old_scan_tail = '''          have hrec := ih (right := marker :: right) htail
+                    exact hrec
+          '''
+          new_scan_tail = '''          have hrec := ih (right := marker :: right) htail
+                    have hrec' :
+                        run (List.length (next :: rest))
+                          (configAt q (rest ++ baseHead :: baseLeft)
+                            (next :: marker :: right)) =
+                        configAt q baseLeft
+                          (baseHead :: (next :: rest).reverse ++ marker :: right) := by
+                      simpa [keepLeftScanConfig] using hrec
+                    rw [hrec']
+                    simp [List.reverse_cons, List.append_assoc]
+          '''
+          if old_scan_tail not in s:
+              raise SystemExit('scan tail not found')
+          s = s.replace(old_scan_tail, new_scan_tail, 1)
+
           old_run_add = '''theorem run_add (m n : Nat) (config : Config) :
               run (m + n) config = run n (run m config) := by
             induction m generalizing config with
@@ -67,6 +84,7 @@ jobs:
           if old_run_add not in s:
               raise SystemExit('run_add block not found')
           s = s.replace(old_run_add, new_run_add, 1)
+
           old_hfirst = '''    cases j with
               | zero => simp [keepLeftScanConfig, List.append_assoc]
               | succ n =>
@@ -82,6 +100,7 @@ jobs:
           if old_hfirst not in s:
               raise SystemExit('hfirst block not found')
           s = s.replace(old_hfirst, new_hfirst, 1)
+
           old_hlive = '''    rw [run_one, step_clauseFind_live]
               unfold cursorMarkers spentMarkers
               simp [List.append_assoc]
@@ -92,14 +111,18 @@ jobs:
           if old_hlive not in s:
               raise SystemExit('hlive block not found')
           s = s.replace(old_hlive, new_hlive, 1)
-          old_cursor = '''    have hlen : cursorMarkers.length = j + 1 + p := by
-              unfold cursorMarkers spentMarkers
-              simp
-            rw [← hlen, hcursor]
-            unfold cursorMarkers spentMarkers baseLeft literalRight
-            simp [List.reverse_append, List.replicate_succ, List.append_assoc]
-          '''
-          new_cursor = '''    have hlen : cursorMarkers.length = j + 1 + p := by
+
+          cursor_start = s.index('  have hcursor\' :')
+          raw_start = s.index('  have hraw :', cursor_start)
+          new_cursor = '''  have hcursor' :
+              run (j + 1 + p)
+                (configAt (.clauseToCursor f c) (.clauseSpent :: baseLeft)
+                  (cursorMarkers ++ literalRight)) =
+              configAt (.clauseToCursor f c)
+                (List.replicate p .processed ++ .clauseEnd ::
+                  List.replicate (j + 1) .clauseSpent ++ baseLeft)
+                literalRight := by
+            have hlen : cursorMarkers.length = j + 1 + p := by
               unfold cursorMarkers spentMarkers
               simp only [List.length_append, List.length_replicate, List.length_cons]
               omega
@@ -110,28 +133,27 @@ jobs:
               | zero => rfl
               | succ j ih =>
                   simp [List.replicate_succ, ih]
-            rw [← hlen, hcursor]
+            rw [← hlen]
+            rw [hcursor]
             unfold cursorMarkers spentMarkers baseLeft literalRight
             rw [hrep]
             simp [List.reverse_append, List.append_assoc]
           '''
-          if old_cursor not in s:
-              raise SystemExit('cursor block not found')
-          s = s.replace(old_cursor, new_cursor, 1)
-          old_hraw = '''    rw [run_one]
-              unfold literalRight
-              rw [step_clauseToCursor_raw]
-              unfold historySign baseLeft
-              simp [List.append_assoc]
+          s = s[:cursor_start] + new_cursor + s[raw_start:]
+
+          raw_start = s.index('  have hraw :')
+          compose_start = s.index('  rw [show p + 2*j + 4', raw_start)
+          new_raw = '''  have hraw :
+              run 1 (configAt (.clauseToCursor f c)
+                (List.replicate p .processed ++ .clauseEnd ::
+                  List.replicate (j + 1) .clauseSpent ++ baseLeft) literalRight) =
+              historySign f c j k p sign literalRest outerLeft tail := by
+            unfold literalRight
+            cases sign <;>
+              simp [run, stepConfig, transition, configAt, historySign, baseLeft,
+                List.append_assoc]
           '''
-          new_hraw = '''    unfold literalRight
-              cases sign <;>
-                simp [run, stepConfig, transition, configAt, historySign, baseLeft,
-                  List.append_assoc]
-          '''
-          if old_hraw not in s:
-              raise SystemExit('hraw block not found')
-          s = s.replace(old_hraw, new_hraw, 1)
+          s = s[:raw_start] + new_raw + s[compose_start:]
           p.write_text(s)
           PY
           lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
