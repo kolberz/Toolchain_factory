@@ -21,7 +21,7 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: v89-harness
-          auto-config: false
+          auto-config: true
           build: false
           test: false
           lint: false
