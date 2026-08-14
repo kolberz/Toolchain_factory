@@ -177,6 +177,7 @@ jobs:
             echo 'unexpected sorryAx' >&2
             exit 1
           fi
+          sha256sum V89Harness.lean | tee V89Harness.lean.sha256
       - name: Record exact toolchain
         working-directory: v89-harness
         run: |
@@ -186,4 +187,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: v89-clause-history-kernel-evidence
-          path: v89-harness/V89_KERNEL.log
+          path: |
+            v89-harness/V89_KERNEL.log
+            v89-harness/V89Harness.lean
+            v89-harness/V89Harness.lean.sha256
