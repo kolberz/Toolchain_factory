@@ -1,0 +1,92 @@
+name: Verify Frontier 24 costed residue automaton
+
+on:
+  push:
+    branches:
+      - agent/frontier24-costed-residue
+    paths:
+      - 'research/frontier24/**'
+      - '.github/workflows/verify-frontier24.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-frontier24:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install exact Lean 4.33.0-rc1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.33.0-rc1
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/lean" --version | tee /tmp/lean-version.txt
+          grep -F '4.33.0-rc1' /tmp/lean-version.txt
+          grep -F '62eed1d' /tmp/lean-version.txt
+
+      - name: Compile Frontier 24 positive core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p frontier24-evidence/logs
+          cd research/frontier24
+          /usr/bin/time -v lean -o Frontier24.olean Frontier24.lean \
+            > ../../frontier24-evidence/logs/Frontier24.log 2>&1
+          cat ../../frontier24-evidence/logs/Frontier24.log
+
+      - name: Run negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd research/frontier24
+          status=0
+          for f in NegativeWrongCost.lean NegativeWrongChoice.lean NegativeFalseReachable.lean NegativeWrongSlotCount.lean; do
+            set +e
+            lean "$f" > "../../frontier24-evidence/logs/${f%.lean}.log" 2>&1
+            rc=$?
+            set -e
+            cat "../../frontier24-evidence/logs/${f%.lean}.log"
+            if [[ $rc -eq 0 ]]; then
+              echo "negative control unexpectedly compiled: $f" >&2
+              status=1
+            else
+              echo "$f: REJECTED as required"
+            fi
+          done
+          exit "$status"
+
+      - name: Source-hygiene and artifact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p frontier24-evidence
+          if grep -R -n -E '\b(sorry|admit|sorryAx|native_decide)\b' research/frontier24 --include='*.lean'; then
+            echo 'forbidden proof-hole token found' >&2
+            exit 1
+          fi
+          sha256sum research/frontier24/*.lean .github/workflows/verify-frontier24.yml \
+            | tee frontier24-evidence/SHA256SUMS.txt
+          cp /tmp/lean-version.txt frontier24-evidence/lean-version.txt
+          printf '%s\n' \
+            'Frontier24 positive core: PASS' \
+            'NegativeWrongCost: REJECTED' \
+            'NegativeWrongChoice: REJECTED' \
+            'NegativeFalseReachable: REJECTED' \
+            'NegativeWrongSlotCount: REJECTED' \
+            > frontier24-evidence/VERIFICATION.txt
+
+      - name: Upload Frontier 24 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontier24-verification-evidence
+          path: frontier24-evidence/**
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 90
