@@ -31,7 +31,39 @@ jobs:
         working-directory: v89-harness
         run: |
           set -euo pipefail
-          sed -i '1s|import Std.Tactic.Omega|import Lean.Elab.Tactic.Omega|' V89Harness.lean
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('V89Harness.lean')
+          s = p.read_text()
+          s = s.replace('import Std.Tactic.Omega', 'import Lean.Elab.Tactic.Omega', 1)
+          s = s.replace('open Sym State Move', 'open Sym State', 1)
+          s = s.replace('(fun s => s = .clauseSpent)', '(fun s => s = clauseSpent)', 1)
+          old = '''theorem run_add (m n : Nat) (config : Config) :
+              run (m + n) config = run n (run m config) := by
+            induction m generalizing config with
+            | zero => rfl
+            | succ m ih =>
+                simp only [Nat.succ_eq_add_one, Nat.add_assoc]
+                change run (m + n + 1) config = _
+                rw [show m + n + 1 = (m + 1) + n by omega]
+                change run n (run (m + 1) config) = _
+                rfl
+          '''
+          new = '''theorem run_add (m n : Nat) (config : Config) :
+              run (m + n) config = run n (run m config) := by
+            induction m generalizing config with
+            | zero =>
+                simp [run]
+            | succ m ih =>
+                rw [Nat.succ_add]
+                change run (m + n) (stepConfig config) =
+                  run n (run m (stepConfig config))
+                exact ih (config := stepConfig config)
+          '''
+          if old not in s:
+              raise SystemExit('run_add block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
           lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
           grep -F 'run_historyFind_to_sign' V89_KERNEL.log
           if grep -F 'sorryAx' V89_KERNEL.log; then
