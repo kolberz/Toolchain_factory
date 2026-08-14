@@ -1,0 +1,49 @@
+name: V89 Clause History Kernel Gate R2
+
+on:
+  push:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-harness/**'
+      - '.github/workflows/v89-clause-history-r2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up exact Lean toolchain
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-harness
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+      - name: Strict kernel compile
+        working-directory: v89-harness
+        run: |
+          set -euo pipefail
+          lake env lean V89Harness.lean 2>&1 | tee V89_KERNEL.log
+          grep -F 'run_historyFind_to_sign' V89_KERNEL.log
+          if grep -F 'sorryAx' V89_KERNEL.log; then
+            echo 'unexpected sorryAx' >&2
+            exit 1
+          fi
+      - name: Record exact toolchain
+        working-directory: v89-harness
+        run: |
+          lean --version | tee -a V89_KERNEL.log
+          lake --version | tee -a V89_KERNEL.log
+      - name: Upload kernel evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v89-clause-history-kernel-evidence-r2
+          path: v89-harness/V89_KERNEL.log
