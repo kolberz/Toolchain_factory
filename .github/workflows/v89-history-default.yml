@@ -1,0 +1,86 @@
+name: V89 History Literal Default Kernel Gate
+
+on:
+  pull_request:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-integrated/**'
+      - '.github/workflows/v89-history-default.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  history-default:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up exact rc1
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-harness
+          auto-config: true
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+
+      - name: Reconstruct exact source and generate history modules
+        run: |
+          set -euo pipefail
+          rm -rf v89-integrated/actual-src
+          mkdir -p v89-integrated/actual-src
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          parts = sorted(Path('v89-integrated/xzchunks').glob('part_*'))
+          expected = [12000] * 13 + [8608]
+          if len(parts) != 14:
+              raise SystemExit(f'expected 14 chunks, got {len(parts)}')
+          payload = b''.join(p.read_bytes()[:n] for p, n in zip(parts, expected))
+          Path('v89-integrated/v89_closure.tar.xz').write_bytes(
+              base64.b64decode(payload, validate=True))
+          PY
+          echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
+          tar -xJf v89-integrated/v89_closure.tar.xz -C v89-integrated/actual-src
+          test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
+          cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
+          python v89-integrated/patch/build_history_valid.py v89-integrated/actual-src
+          python v89-integrated/patch/fix_history_valid_generated.py v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
+          python v89-integrated/patch/build_history_default.py v89-integrated/actual-src
+          sha256sum v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
+          sha256sum v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryDefaultPhase.lean
+
+      - name: Compile history tower and default context lift
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase
+          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseRecursionPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryDefaultPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryDefaultPhase.olean \
+            2>&1 | tee ../../V89_HISTORY_DEFAULT_BUILD.log
+
+      - name: Kernel audit default history evaluator
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          cat > V89HistoryDefaultGate.lean <<'LEAN'
+          import OpenProblems.Complexity.SATMachineClauseLiteralHistoryDefaultPhase
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLookupLoop_default_zero
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLookupLoop_default_succ
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLiteral_default_extra
+          LEAN
+          lake env lean V89HistoryDefaultGate.lean 2>&1 | tee ../../V89_HISTORY_DEFAULT_KERNEL.log
+          if grep -F 'sorryAx' ../../V89_HISTORY_DEFAULT_KERNEL.log; then
+            echo 'unexpected sorryAx' >&2
+            exit 1
+          fi
