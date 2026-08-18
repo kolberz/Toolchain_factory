@@ -50,9 +50,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(sha256sum HatLocalDelaunayV80.lean | awk '{print $1}')" = '4669face466d4c7c4b933faa682e1d2012927078c7531efe2ee214fba1184d7d'
-          test "$(sha256sum HatProofCarryingCavityV82.lean | awk '{print $1}')" = '85ee5457bb78bdde7711092752b050be6e52dc187af75966cc6c048ba2c8a77f'
+          V80_SHA="$(sha256sum HatLocalDelaunayV80.lean | awk '{print $1}')"
+          V82_SHA="$(sha256sum HatProofCarryingCavityV82.lean | awk '{print $1}')"
+          echo "V80_SHA=$V80_SHA"
+          echo "V82_SHA=$V82_SHA"
           sha256sum HatLocalDelaunayV80.lean HatProofCarryingCavityV82.lean | tee V82_FORMAL_SOURCES.sha256
+          test "$V80_SHA" = '4669face466d4c7c4b933faa682e1d2012927078c7531efe2ee214fba1184d7d'
+          test "$V82_SHA" = '85ee5457bb78bdde7711092752b050be6e52dc187af75966cc6c048ba2c8a77f'
 
       - name: Kernel elaborate canonical v80 and v82 composition
         shell: bash
