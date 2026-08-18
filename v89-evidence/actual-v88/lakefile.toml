@@ -1,6 +1,0 @@
-name = "open_problems_phase0_wp1"
-version = "0.88.0"
-defaultTargets = ["OpenProblems"]
-
-[[lean_lib]]
-name = "OpenProblems"
