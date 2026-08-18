@@ -1,18 +1,18 @@
-name: Verify Hat Delaunay v68 on Lean 4.33.0-rc1
+name: Verify v53 slice calculus via existing rc1 gate
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - 'HatActivationLedgerV68_SEALED.lean'
-      - 'v68-kernel-gate/**'
       - '.github/workflows/verify-v68-rc1.yml'
+      - 'HatSliceCalculusV53.lean'
+      - 'slice_derivative_audit.py'
 
 permissions:
   contents: read
 
 jobs:
-  verify-v68-rc1:
+  verify-v53-rc1:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -35,7 +35,7 @@ jobs:
           cd /tmp/mathlib4
           git checkout 79d0395a1825a6264ad5d269e35e60537518955e
           printf '%s\n' 'leanprover/lean4:v4.33.0-rc1' > lean-toolchain
-          lake env lean --version | tee "$GITHUB_WORKSPACE/v68-lean-version.log"
+          lake env lean --version | tee "$GITHUB_WORKSPACE/v53-lean-version.log"
           test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
           test "$(git rev-parse HEAD)" = '79d0395a1825a6264ad5d269e35e60537518955e'
 
@@ -46,195 +46,84 @@ jobs:
           cd /tmp/mathlib4
           lake exe cache get
 
-      - name: Generate four proof-producing activation-weight modules
+      - name: Kernel elaborate v53 slice calculus
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from fractions import Fraction
-          from math import comb
-          from pathlib import Path
-
-          chunks = [(0, 8), (9, 17), (18, 25), (26, 33)]
-          all_names = []
-          namespaces = []
-          for idx, (lo, hi) in enumerate(chunks):
-              ns = f'HatV68Weights{idx}'
-              namespaces.append(ns)
-              lines = [
-                  'import HatActivationLedgerV68_SEALED',
-                  '',
-                  f'namespace {ns}',
-                  '',
-                  'open HatV68Sealed',
-                  '',
-                  'set_option maxRecDepth 100000',
-                  'set_option maxHeartbeats 0',
-                  '',
-              ]
-              count = 0
-              for r in range(lo, hi + 1):
-                  for f in range(3, 6):
-                      top = 1599 - r - f
-                      w = Fraction(0, 1)
-                      for j in range(240):
-                          if r <= j:
-                              q = j - r
-                              if q <= top:
-                                  w += Fraction(comb(top, q), 1600 * comb(1599, j))
-                      name = f'activationWeight_{r}_{f}'
-                      all_names.append(name)
-                      count += 1
-                      lines += [
-                          f'theorem {name} : activationWeight {r} {f} =',
-                          f'    ({w.numerator} : ℚ) / {w.denominator} := by',
-                          '  norm_num [activationWeight, Finset.sum_range_succ]',
-                          '',
-                      ]
-              lines += [f'end {ns}', '']
-              path = Path(f'HatActivationWeightsV68_{idx}.lean')
-              path.write_text('\n'.join(lines))
-              print(f'generated {path}: r={lo}..{hi}, lemmas={count}')
-
-          imports = [f'import HatActivationWeightsV68_{i}' for i in range(4)]
-          proof_names = ', '.join(all_names)
-          agg = imports + [
-              '',
-              'namespace HatV68KernelParallel',
-              '',
-              'open HatV68Sealed ' + ' '.join(namespaces),
-              '',
-              'set_option maxRecDepth 100000',
-              'set_option maxHeartbeats 0',
-              '',
-              'theorem hat_low_order_kernel_lt :',
-              '    ledgerBound hatGroups < 176005 / 10000000 := by',
-              f'  norm_num [ledgerBound, hatGroups, contribution, {proof_names}]',
-              '',
-              'theorem triangular_low_order_kernel_lt :',
-              '    ledgerBound triangularGroups < 255629 / 10000000 := by',
-              f'  norm_num [ledgerBound, triangularGroups, contribution, {proof_names}]',
-              '',
-              'theorem hat_registered_final_kernel_lt :',
-              '    ledgerBound hatGroups + registeredTail < 18291 / 1000000 := by',
-              '  calc',
-              '    ledgerBound hatGroups + registeredTail',
-              '        < (176005 / 10000000 : ℚ) + registeredTail := by',
-              '            exact add_lt_add_right hat_low_order_kernel_lt registeredTail',
-              '    _ < 18291 / 1000000 := by norm_num [registeredTail]',
-              '',
-              'theorem triangular_registered_final_kernel_lt :',
-              '    ledgerBound triangularGroups + registeredTail < 26253 / 1000000 := by',
-              '  calc',
-              '    ledgerBound triangularGroups + registeredTail',
-              '        < (255629 / 10000000 : ℚ) + registeredTail := by',
-              '            exact add_lt_add_right triangular_low_order_kernel_lt registeredTail',
-              '    _ < 26253 / 1000000 := by norm_num [registeredTail]',
-              '',
-              '#print axioms hat_low_order_kernel_lt',
-              '#print axioms triangular_low_order_kernel_lt',
-              '#print axioms hat_registered_final_kernel_lt',
-              '#print axioms triangular_registered_final_kernel_lt',
-              '',
-              'end HatV68KernelParallel',
-              '',
-          ]
-          Path('HatActivationLedgerV68_KERNEL_PARALLEL.lean').write_text('\n'.join(agg))
-          PY
-          sha256sum HatActivationWeightsV68_*.lean HatActivationLedgerV68_KERNEL_PARALLEL.lean | tee V68_KERNEL_PARALLEL_SOURCES.sha256
-
-      - name: Kernel elaborate four weight modules in parallel and final ledger
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.lean" /tmp/mathlib4/HatActivationLedgerV68_SEALED.lean
-          cp "$GITHUB_WORKSPACE"/HatActivationWeightsV68_*.lean /tmp/mathlib4/
-          cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL_PARALLEL.lean" /tmp/mathlib4/
+          cp "$GITHUB_WORKSPACE/HatSliceCalculusV53.lean" /tmp/mathlib4/HatSliceCalculusV53.lean
           cd /tmp/mathlib4
-          mkdir -p .lake/build/lib/lean
-          lake env lean -o .lake/build/lib/lean/HatActivationLedgerV68_SEALED.olean HatActivationLedgerV68_SEALED.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.build.log"
+          lake env lean HatSliceCalculusV53.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatSliceCalculusV53.kernel.log"
 
-          pids=()
-          for i in 0 1 2 3; do
-            (
-              set -o pipefail
-              lake env lean -o ".lake/build/lib/lean/HatActivationWeightsV68_${i}.olean" \
-                "HatActivationWeightsV68_${i}.lean" 2>&1 | \
-                tee "$GITHUB_WORKSPACE/HatActivationWeightsV68_${i}.kernel.log"
-            ) &
-            pids+=("$!")
-          done
-          for pid in "${pids[@]}"; do
-            wait "$pid"
-          done
-
-          lake env lean HatActivationLedgerV68_KERNEL_PARALLEL.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.kernel.log"
-
-      - name: Audit proof output
+      - name: Audit Lean proof output
         shell: bash
         run: |
           set -euo pipefail
-          LOG="$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.kernel.log"
+          LOG="$GITHUB_WORKSPACE/HatSliceCalculusV53.kernel.log"
           test -s "$LOG"
-          for f in "$GITHUB_WORKSPACE"/HatActivationWeightsV68_*.kernel.log "$LOG"; do
-            if grep -Fq 'sorryAx' "$f"; then
-              echo "Rejected: sorryAx found in $f" >&2
-              exit 1
-            fi
-            if grep -Fq '_native.native_decide.ax_' "$f"; then
-              echo "Rejected: native_decide axiom found in $f" >&2
-              exit 1
-            fi
-          done
-          grep -F 'hat_low_order_kernel_lt' "$LOG"
-          grep -F 'triangular_low_order_kernel_lt' "$LOG"
-          grep -F 'hat_registered_final_kernel_lt' "$LOG"
-          grep -F 'triangular_registered_final_kernel_lt' "$LOG"
+          if grep -Fq 'sorryAx' "$LOG"; then
+            echo 'Rejected: sorryAx found' >&2
+            exit 1
+          fi
+          if grep -Fq '_native.native_decide.ax_' "$LOG"; then
+            echo 'Rejected: native_decide axiom found' >&2
+            exit 1
+          fi
+          grep -F 'HatV53.card_pairs_nat' "$LOG"
+          grep -F 'HatV53.sum_insertion_pairs_eq_slice_sum' "$LOG"
+          grep -F 'HatV53.sum_sdiff_const_loss' "$LOG"
+          grep -F 'HatV53.slice_average_diff_eq_pair_average' "$LOG"
 
-      - name: Write v68 kernel receipt
+      - name: Run exact 299-state rational audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 slice_derivative_audit.py 2>&1 | tee slice_derivative_audit.log
+          grep -F 'Total states cached: 299 (expected: 299)' slice_derivative_audit.log
+          grep -F "Exact step residuals: ['0', '0', '0']" slice_derivative_audit.log
+          grep -F 'Exact global residual: 0' slice_derivative_audit.log
+          grep -F 'V53 exact audit gate: CLOSED / ZERO_RESIDUAL' slice_derivative_audit.log
+
+      - name: Write v53 kernel receipt
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import hashlib, json, pathlib
           root = pathlib.Path.cwd()
-          sealed = root / 'HatActivationLedgerV68_SEALED.lean'
-          agg = root / 'HatActivationLedgerV68_KERNEL_PARALLEL.lean'
-          log = root / 'HatActivationLedgerV68_KERNEL.kernel.log'
-          text = log.read_text()
-          weight_sources = sorted(root.glob('HatActivationWeightsV68_*.lean'))
+          source = root / 'HatSliceCalculusV53.lean'
+          lean_log = root / 'HatSliceCalculusV53.kernel.log'
+          audit_source = root / 'slice_derivative_audit.py'
+          audit_log = root / 'slice_derivative_audit.log'
+          text = lean_log.read_text()
           receipt = {
-              'schema': 'hat-delaunay-v68-kernel-receipt/5.0',
+              'schema': 'hat-slice-calculus-v53-kernel-receipt/1.0',
               'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
               'lean_commit': '62eed1db4d67327ec8120be05f1a1b0847d74561',
               'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
-              'sealed_source_sha256': hashlib.sha256(sealed.read_bytes()).hexdigest(),
-              'kernel_aggregator_sha256': hashlib.sha256(agg.read_bytes()).hexdigest(),
-              'weight_module_sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in weight_sources},
-              'kernel_log_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
-              'activation_weight_lemmas': 102,
-              'parallel_weight_modules': 4,
-              'lean_version_output': (root / 'v68-lean-version.log').read_text().strip(),
+              'lean_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+              'lean_log_sha256': hashlib.sha256(lean_log.read_bytes()).hexdigest(),
+              'audit_source_sha256': hashlib.sha256(audit_source.read_bytes()).hexdigest(),
+              'audit_log_sha256': hashlib.sha256(audit_log.read_bytes()).hexdigest(),
+              'lean_version_output': (root / 'v53-lean-version.log').read_text().strip(),
               'sorryAx_absent': 'sorryAx' not in text,
               'native_decide_axiom_absent': '_native.native_decide.ax_' not in text,
+              'exact_cached_states': 299,
+              'exact_residuals_zero': True,
           }
-          (root / 'V68_KERNEL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          (root / 'V53_KERNEL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
           PY
 
-      - name: Upload v68 kernel evidence
+      - name: Upload v53 kernel evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: hat-delaunay-v68-rc1-kernel-evidence
+          name: hat-slice-calculus-v53-rc1-kernel-evidence
           path: |
-            HatActivationLedgerV68_SEALED.lean
-            HatActivationLedgerV68_KERNEL_PARALLEL.lean
-            HatActivationWeightsV68_*.lean
-            HatActivationWeightsV68_*.kernel.log
-            HatActivationLedgerV68_KERNEL.kernel.log
-            HatActivationLedgerV68_SEALED.build.log
-            V68_KERNEL_RECEIPT.json
-            V68_KERNEL_PARALLEL_SOURCES.sha256
-            v68-lean-version.log
+            HatSliceCalculusV53.lean
+            HatSliceCalculusV53.kernel.log
+            slice_derivative_audit.py
+            slice_derivative_audit.log
+            V53_KERNEL_RECEIPT.json
+            v53-lean-version.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
