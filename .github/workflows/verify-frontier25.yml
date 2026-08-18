@@ -1,0 +1,186 @@
+name: Verify Frontier 25 native WTC linear residue
+
+on:
+  push:
+    branches:
+      - agent/frontier25-native-wtc-linear
+    paths:
+      - 'research/frontier25/**'
+      - '.github/workflows/verify-frontier25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-frontier25:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install exact Lean 4.33.0-rc1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.33.0-rc1
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/lean" --version | tee /tmp/lean-version.txt
+          grep -F '4.33.0-rc1' /tmp/lean-version.txt
+          grep -F '62eed1d' /tmp/lean-version.txt
+
+      - name: Extract and verify retained Frontier 23 source closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p research/frontier25/formal frontier25-evidence/logs
+          tar -C research/frontier25/formal -xzf research/frontier25/frontier23-formal-closure.tar.gz
+          cat > /tmp/frontier23-source.sha256 <<'SUMS'
+          2242968f4dc127b6dec91141062857f36bc26c49aa868fe4f10799c35deb5527  ClosedNaturalSubset.lean
+          08a628a0b44c7e2dd8a73034480d164fa3d47f59001fa89e85f77e171ea026b2  Complexity.lean
+          9900d48f3f74600ea69b5aa8338e2fd9b52717de1229fd4d0e88c997a80f15fc  ExprCompiler.lean
+          3f2e5fe79f76a180a432cb55c5f6d69a0951e45d904f21a23507c53e9564800d  FallbackRawLRATBridge.lean
+          d4cbab6dbc704550c6ee348919dc48090baa8378c888140ea86b6181fe6b1917  FallbackRawResolution.lean
+          90cad2485abdcad694f289792c7d553d5b7c122cfbe93d1ff351325994dd8534  FixedWidth.lean
+          50e9b85f36a95c4d0e741d6675b36f8f72de52dcc753156b21c4fad7549f42e0  GCDExamples.lean
+          89b66e19fb5b9d91a21bdf2a9951dd8e53f8f27c052874d9884fd99ddfe4e136  GCDStrategy.lean
+          e9d7c0d7d440886156483276a228c397c3ba8aba9bd80af7753d0bb4f327347f  ModularObstruction.lean
+          64888e146517b6ea003c3c8b80101a1e1bea479ede18f79089ef8b3878ecc931  NaturalSubsetFrontend.lean
+          f96a52b2964c193c87fc7ce038ae1aed9e768f43ef0d5ac644bc8f1c0559eb85  ResidueFallbackLRATBridge.lean
+          8b369e7e07eb19fc724f2efcb3e31e0be229d85481faa6dc39731f19412e9f27  ResidueFallbackResolution.lean
+          9d0b66377d4eb008f9ea077ef094afc04a895f810ccd61f5a3d9c66458132e1b  ResidueReachability.lean
+          f75892c1410d2e5bd8bd1d0237bfc457dd560513e424a8ea765858f82e62f7a1  ResidueStrategy.lean
+          9464b1df596f8b6a75d908d944ec4a62ca7b4a1144aef01ea9e9fc92130867ef  ResolutionBridge.lean
+          70684445fa220bda8cc2683638106464e38766ab1481bc2b1bab9314d0cc1e4b  ResolutionCertificate.lean
+          1df24925effc843bab224e9c3f1ac2b2da7ce91d660471ff70f01c80d1fe6bc6  SSATseitin.lean
+          89196e6875b064b1546dfc03be62ba1a6ee361a7774f6bec8c315186ef3a1ca4  SharedAdder.lean
+          28d4d7227a05539bb2e9fb74a3748913706700b5018b7d9c13c6fc6125b92e81  SharedRipple.lean
+          b7254e60b728941e349fd96d83be27bf33a18a3b388321e1207459fdcf3d850d  SharedSelectedSum.lean
+          e65abb87a4b187feae9f6997423d5526690d22abf8e9622cc13e1ec0104dd817  SharedSubsetFrontend.lean
+          5a9673ad585459f6f5546dc1ea1640397a2ccd99215a19d9e2f533bb7a313ae9  SharedSubsetItem.lean
+          f3d7e20a78b563d56ecaa277a40f20d16a4d8d95acbc95a4d51231cdc0be6717  StrategyCompiler.lean
+          6278a9f85faea25101f7b95629dfafaab45dbde3477f81f2cad8f327954840e8  SubsetSumFW.lean
+          905ea14415253e0038ffe54df81157b7dd669be4cc6162cb8feea52c4db2e6bf  SubsetSumNat.lean
+          68f754c39abc4c5b440e9af7d8307efc14c483bed6cb9b4745f3a004e944b3cd  WordNat.lean
+          SUMS
+          (cd research/frontier25/formal && sha256sum -c /tmp/frontier23-source.sha256) | tee frontier25-evidence/logs/frontier23-source-hash.log
+
+      - name: Recompile retained Frontier 23 WTC CNF LRAT closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier25/formal"
+          cd research/frontier25/formal
+          modules=(
+            SSATseitin ExprCompiler FixedWidth Complexity SharedAdder SharedRipple
+            SubsetSumFW SharedSubsetItem SharedSelectedSum SharedSubsetFrontend
+            WordNat SubsetSumNat NaturalSubsetFrontend ClosedNaturalSubset
+            ModularObstruction StrategyCompiler ResolutionCertificate ResolutionBridge
+            FallbackRawResolution FallbackRawLRATBridge GCDStrategy GCDExamples
+            ResidueReachability ResidueStrategy ResidueFallbackResolution ResidueFallbackLRATBridge
+          )
+          : > ../../../frontier25-evidence/logs/frontier23-recompile.log
+          for m in "${modules[@]}"; do
+            echo "=== $m ===" | tee -a ../../../frontier25-evidence/logs/frontier23-recompile.log
+            /usr/bin/time -v lean -o "$m.olean" "$m.lean" >> ../../../frontier25-evidence/logs/frontier23-recompile.log 2>&1
+          done
+          tail -120 ../../../frontier25-evidence/logs/frontier23-recompile.log
+
+      - name: Recompile Frontier 24 parent core
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier24:$PWD/research/frontier25/formal"
+          cd research/frontier24
+          /usr/bin/time -v lean -o Frontier24.olean Frontier24.lean > ../../frontier25-evidence/logs/Frontier24-parent.log 2>&1
+          cat ../../frontier25-evidence/logs/Frontier24-parent.log
+
+      - name: Compile Frontier 25 positive core
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier25:$PWD/research/frontier25/formal:$PWD/research/frontier24"
+          cd research/frontier25
+          /usr/bin/time -v lean -o Frontier25.olean Frontier25.lean > ../../frontier25-evidence/logs/Frontier25.log 2>&1
+          cat ../../frontier25-evidence/logs/Frontier25.log
+
+      - name: Run semantic negative controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd research/frontier25
+          cat > NegativeQuadraticWork.lean <<'EOF'
+          import Frontier25
+          open WTCF25
+          example : linearTransitionWork 5 = 25 := by decide
+          EOF
+          cat > NegativeWrongResidueBranch.lean <<'EOF'
+          import Frontier25
+          open WTCF25
+          example : (choosePortfolio WTCF23.residueUpgrade).tag = .residue 5 := by decide
+          EOF
+          cat > NegativeFallbackResidue.lean <<'EOF'
+          import Frontier25
+          open WTCF25
+          example : (choosePortfolio WTCF23.residueFallback).tag = .residue 5 := by decide
+          EOF
+          cat > NegativeArgmin.lean <<'EOF'
+          import Frontier25
+          open WTCF25
+          example : (chooseCosted WTCF23.residueUpgrade WTCF23.residuePortfolioModuli).map (fun c => c.cost) = some 11 := by decide
+          EOF
+          cat > NegativeWTCBridge.lean <<'EOF'
+          import Frontier25
+          open WTCF25
+          example : WTC.wordValue WTCF23.residueUpgrade.target % 3 ∈ WTCF23.reachableResidues 3 WTCF23.residueUpgrade.values := by decide
+          EOF
+          export LEAN_PATH="$PWD:$PWD/formal:$PWD/../frontier24"
+          status=0
+          for f in NegativeQuadraticWork.lean NegativeWrongResidueBranch.lean NegativeFallbackResidue.lean NegativeArgmin.lean NegativeWTCBridge.lean; do
+            log="../../frontier25-evidence/logs/${f%.lean}.log"
+            set +e
+            lean "$f" > "$log" 2>&1
+            rc=$?
+            set -e
+            cat "$log"
+            if [[ $rc -eq 0 ]]; then
+              echo "negative control unexpectedly compiled: $f" >&2
+              status=1
+            elif grep -Eqi 'unknown module|unknown module prefix|file.*not found|unexpected token|unknown identifier' "$log"; then
+              echo "negative control failed for import/infrastructure reason: $f" >&2
+              status=1
+            else
+              echo "$f: SEMANTICALLY REJECTED as required"
+            fi
+          done
+          exit "$status"
+
+      - name: Source hygiene and evidence manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -n -E '\b(sorry|admit|sorryAx|native_decide)\b' research/frontier25 --include='*.lean'; then
+            echo 'forbidden proof-hole token found' >&2
+            exit 1
+          fi
+          sha256sum research/frontier25/Frontier25.lean research/frontier25/formal/*.lean .github/workflows/verify-frontier25.yml | tee frontier25-evidence/SHA256SUMS.txt
+          cp /tmp/lean-version.txt frontier25-evidence/lean-version.txt
+          printf '%s\n' \
+            'Frontier23 WTC/CNF/LRAT source closure: HASHED_AND_RECOMPILED' \
+            'Frontier24 parent: RECOMPILED' \
+            'Frontier25 direct state: KERNEL_CHECKED' \
+            'Declared work equality: n*m' \
+            'Generic argmin theorem: KERNEL_CHECKED' \
+            'Five semantic negative controls: REJECTED' \
+            > frontier25-evidence/VERIFICATION.txt
+
+      - name: Upload Frontier 25 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontier25-verification-evidence
+          path: frontier25-evidence/**
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 90
