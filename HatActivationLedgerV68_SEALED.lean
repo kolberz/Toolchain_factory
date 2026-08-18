@@ -1,5 +1,7 @@
 import Mathlib.Tactic
 
+open scoped BigOperators
+
 namespace HatV68Sealed
 
 structure Group where
