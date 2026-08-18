@@ -22,7 +22,34 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p v89-integrated/actual-src
-          cat v89-integrated/xzchunks/part_* | tr -d '\r\n' | base64 -d > v89-integrated/v89_closure.tar.xz
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          parts = sorted(Path('v89-integrated/xzchunks').glob('part_*'))
+          if len(parts) != 14:
+              raise SystemExit(f'expected 14 chunks, got {len(parts)}')
+
+          allowed = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n\t ')
+          payload = bytearray()
+          with open('v89-integrated/V89_CHUNK_DIAGNOSTIC.txt', 'w') as log:
+              for p in parts:
+                  raw = p.read_bytes()
+                  bad = [(i, b) for i, b in enumerate(raw) if b not in allowed]
+                  print(f'{p.name}: bytes={len(raw)} bad={bad[:8]}', file=log)
+                  if bad:
+                      raise SystemExit(f'{p.name}: invalid base64 bytes {bad[:8]}')
+                  payload.extend(raw.translate(None, b'\r\n\t '))
+              print(f'joined_base64_bytes={len(payload)}', file=log)
+              print(f'joined_mod4={len(payload) % 4}', file=log)
+
+          try:
+              decoded = base64.b64decode(bytes(payload), validate=True)
+          except Exception as exc:
+              raise SystemExit(f'base64 validation failed: {exc}')
+          Path('v89-integrated/v89_closure.tar.xz').write_bytes(decoded)
+          PY
+          cat v89-integrated/V89_CHUNK_DIAGNOSTIC.txt
           echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
           sha256sum v89-integrated/v89_closure.tar.xz | tee v89-integrated/V89_CLOSURE_SHA256.txt
           tar -xJf v89-integrated/v89_closure.tar.xz -C v89-integrated/actual-src
@@ -66,10 +93,12 @@ jobs:
           lake --version | tee -a ../V89_ACTUAL_KERNEL.log
 
       - name: Upload actual-source kernel evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: v89-integrated-actual-v88-kernel-evidence
           path: |
+            v89-integrated/V89_CHUNK_DIAGNOSTIC.txt
             v89-integrated/V89_CLOSURE_SHA256.txt
             v89-integrated/V89_ACTUAL_BUILD.log
             v89-integrated/V89_ACTUAL_KERNEL.log
