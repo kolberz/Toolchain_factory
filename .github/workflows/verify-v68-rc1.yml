@@ -54,6 +54,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.lean" /tmp/mathlib4/HatActivationLedgerV68_SEALED.lean
           cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.lean" /tmp/mathlib4/HatActivationLedgerV68_KERNEL.lean
           cd /tmp/mathlib4
+          mkdir -p .lake/build/lib/lean
+          lake env lean -o .lake/build/lib/lean/HatActivationLedgerV68_SEALED.olean HatActivationLedgerV68_SEALED.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.build.log"
           lake env lean HatActivationLedgerV68_KERNEL.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.kernel.log"
 
       - name: Audit proof output
@@ -88,7 +90,7 @@ jobs:
           text = log.read_text()
           version = (root / 'v68-lean-version.log').read_text().strip()
           receipt = {
-              'schema': 'hat-delaunay-v68-kernel-receipt/2.0',
+              'schema': 'hat-delaunay-v68-kernel-receipt/2.1',
               'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
               'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
               'sealed_source_sha256': hashlib.sha256(sealed.read_bytes()).hexdigest(),
@@ -108,6 +110,7 @@ jobs:
           path: |
             HatActivationLedgerV68_SEALED.lean
             HatActivationLedgerV68_KERNEL.lean
+            HatActivationLedgerV68_SEALED.build.log
             HatActivationLedgerV68_KERNEL.kernel.log
             V68_KERNEL_RECEIPT.json
             v68-lean-version.log
