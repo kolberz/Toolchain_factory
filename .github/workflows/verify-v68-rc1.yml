@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'HatActivationLedgerV68_SEALED.lean'
+      - 'HatActivationLedgerV68_KERNEL.lean'
       - 'v68-kernel-gate/**'
       - '.github/workflows/verify-v68-rc1.yml'
 
@@ -46,47 +47,56 @@ jobs:
           cd /tmp/mathlib4
           lake exe cache get
 
-      - name: Kernel elaborate sealed v68 ledger
+      - name: Kernel elaborate v68 ledger without native-decide trust
         shell: bash
         run: |
           set -euo pipefail
           cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.lean" /tmp/mathlib4/HatActivationLedgerV68_SEALED.lean
+          cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.lean" /tmp/mathlib4/HatActivationLedgerV68_KERNEL.lean
           cd /tmp/mathlib4
-          lake env lean HatActivationLedgerV68_SEALED.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.kernel.log"
+          lake env lean HatActivationLedgerV68_KERNEL.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.kernel.log"
 
       - name: Audit proof output
         shell: bash
         run: |
           set -euo pipefail
-          LOG="$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.kernel.log"
+          LOG="$GITHUB_WORKSPACE/HatActivationLedgerV68_KERNEL.kernel.log"
           test -s "$LOG"
           if grep -Fq 'sorryAx' "$LOG"; then
             echo 'Rejected: sorryAx found in v68 kernel log' >&2
             exit 1
           fi
-          grep -F 'hat_low_order_lt' "$LOG"
-          grep -F 'triangular_low_order_lt' "$LOG"
-          grep -F 'hat_registered_final_lt' "$LOG"
-          grep -F 'triangular_registered_final_lt' "$LOG"
+          if grep -Fq '_native.native_decide.ax_' "$LOG"; then
+            echo 'Rejected: native_decide axiom found in v68 kernel log' >&2
+            exit 1
+          fi
+          grep -F 'hat_low_order_kernel_lt' "$LOG"
+          grep -F 'triangular_low_order_kernel_lt' "$LOG"
+          grep -F 'hat_registered_final_kernel_lt' "$LOG"
+          grep -F 'triangular_registered_final_kernel_lt' "$LOG"
 
       - name: Write v68 kernel receipt
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, json, pathlib, subprocess
+          import hashlib, json, pathlib
           root = pathlib.Path.cwd()
-          src = root / 'HatActivationLedgerV68_SEALED.lean'
-          log = root / 'HatActivationLedgerV68_SEALED.kernel.log'
+          sealed = root / 'HatActivationLedgerV68_SEALED.lean'
+          kernel = root / 'HatActivationLedgerV68_KERNEL.lean'
+          log = root / 'HatActivationLedgerV68_KERNEL.kernel.log'
+          text = log.read_text()
           version = (root / 'v68-lean-version.log').read_text().strip()
           receipt = {
-              'schema': 'hat-delaunay-v68-kernel-receipt/1.0',
+              'schema': 'hat-delaunay-v68-kernel-receipt/2.0',
               'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
               'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
-              'source_sha256': hashlib.sha256(src.read_bytes()).hexdigest(),
+              'sealed_source_sha256': hashlib.sha256(sealed.read_bytes()).hexdigest(),
+              'kernel_wrapper_sha256': hashlib.sha256(kernel.read_bytes()).hexdigest(),
               'kernel_log_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
               'lean_version_output': version,
-              'sorryAx_absent': 'sorryAx' not in log.read_text(),
+              'sorryAx_absent': 'sorryAx' not in text,
+              'native_decide_axiom_absent': '_native.native_decide.ax_' not in text,
           }
           (root / 'V68_KERNEL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
           PY
@@ -97,7 +107,8 @@ jobs:
           name: hat-delaunay-v68-rc1-kernel-evidence
           path: |
             HatActivationLedgerV68_SEALED.lean
-            HatActivationLedgerV68_SEALED.kernel.log
+            HatActivationLedgerV68_KERNEL.lean
+            HatActivationLedgerV68_KERNEL.kernel.log
             V68_KERNEL_RECEIPT.json
             v68-lean-version.log
           if-no-files-found: error
