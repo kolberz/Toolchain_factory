@@ -1,0 +1,80 @@
+name: V89 History Literal Valid Kernel Gate
+
+on:
+  pull_request:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-integrated/**'
+      - '.github/workflows/v89-history-valid.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  history-valid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up exact rc1
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-harness
+          auto-config: true
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+
+      - name: Reconstruct exact source and install patches
+        run: |
+          set -euo pipefail
+          rm -rf v89-integrated/actual-src
+          mkdir -p v89-integrated/actual-src
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          parts = sorted(Path('v89-integrated/xzchunks').glob('part_*'))
+          expected = [12000] * 13 + [8608]
+          if len(parts) != 14:
+              raise SystemExit(f'expected 14 chunks, got {len(parts)}')
+          payload = b''.join(p.read_bytes()[:n] for p, n in zip(parts, expected))
+          Path('v89-integrated/v89_closure.tar.xz').write_bytes(
+              base64.b64decode(payload, validate=True))
+          PY
+          echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
+          tar -xJf v89-integrated/v89_closure.tar.xz -C v89-integrated/actual-src
+          test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
+          cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
+          cp v89-integrated/patch/SATMachineClauseLiteralHistoryValidPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
+
+      - name: Compile history tower and valid context lift
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase
+          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseRecursionPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.olean \
+            2>&1 | tee ../../V89_HISTORY_VALID_BUILD.log
+
+      - name: Kernel audit valid history evaluator
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          cat > V89HistoryValidGate.lean <<'LEAN'
+          import OpenProblems.Complexity.SATMachineClauseLiteralHistoryValidPhase
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLiteralSign_to_indexRead
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLookupLoop_target
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyLiteral_valid
+          LEAN
+          lake env lean V89HistoryValidGate.lean 2>&1 | tee ../../V89_HISTORY_VALID_KERNEL.log
+          if grep -F 'sorryAx' ../../V89_HISTORY_VALID_KERNEL.log; then
+            echo 'unexpected sorryAx' >&2
+            exit 1
+          fi
