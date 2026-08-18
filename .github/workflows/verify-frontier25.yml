@@ -39,7 +39,7 @@ jobs:
           set -euo pipefail
           mkdir -p research/frontier25/formal frontier25-evidence/logs
           cat research/frontier25/closure-parts/part-* >/tmp/frontier23-formal-closure.tar.gz
-          echo '70f68b05c181f172f2e7c778c702aa4b29146f24e5905bc8de2ca2d6b12e9ae9  /tmp/frontier23-formal-closure.tar.gz' | sha256sum -c - | tee frontier25-evidence/logs/closure-archive-hash.log
+          echo '2651de483bdbfe289270e746b6fbd9aabd8117d0e65c3e8727616d893c898d78  /tmp/frontier23-formal-closure.tar.gz' | sha256sum -c - | tee frontier25-evidence/logs/closure-archive-hash.log
           tar -C research/frontier25/formal -xzf /tmp/frontier23-formal-closure.tar.gz
           (cd research/frontier25/formal && sha256sum -c ../frontier23-source.sha256) | tee frontier25-evidence/logs/frontier23-source-hash.log
 
