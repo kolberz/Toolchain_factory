@@ -1,0 +1,129 @@
+name: Verify Hat Slice Calculus v53 on Lean 4.33.0-rc1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'HatSliceCalculusV53.lean'
+      - 'slice_derivative_audit.py'
+      - '.github/workflows/verify-v53-rc1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-v53-rc1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Toolchain_factory
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install elan
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch pinned Mathlib and exact Lean toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/leanprover-community/mathlib4.git /tmp/mathlib4
+          cd /tmp/mathlib4
+          git checkout 79d0395a1825a6264ad5d269e35e60537518955e
+          printf '%s\n' 'leanprover/lean4:v4.33.0-rc1' > lean-toolchain
+          lake env lean --version | tee "$GITHUB_WORKSPACE/v53-lean-version.log"
+          test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          test "$(git rev-parse HEAD)" = '79d0395a1825a6264ad5d269e35e60537518955e'
+
+      - name: Restore Mathlib cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/mathlib4
+          lake exe cache get
+
+      - name: Kernel elaborate v53 slice calculus
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/HatSliceCalculusV53.lean" /tmp/mathlib4/HatSliceCalculusV53.lean
+          cd /tmp/mathlib4
+          lake env lean HatSliceCalculusV53.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatSliceCalculusV53.kernel.log"
+
+      - name: Audit Lean proof output
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$GITHUB_WORKSPACE/HatSliceCalculusV53.kernel.log"
+          test -s "$LOG"
+          if grep -Fq 'sorryAx' "$LOG"; then
+            echo 'Rejected: sorryAx found' >&2
+            exit 1
+          fi
+          if grep -Fq '_native.native_decide.ax_' "$LOG"; then
+            echo 'Rejected: native_decide axiom found' >&2
+            exit 1
+          fi
+          grep -F 'HatV53.card_pairs_nat' "$LOG"
+          grep -F 'HatV53.sum_insertion_pairs_eq_slice_sum' "$LOG"
+          grep -F 'HatV53.sum_sdiff_const_loss' "$LOG"
+          grep -F 'HatV53.slice_average_diff_eq_pair_average' "$LOG"
+
+      - name: Run exact 299-state rational audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 slice_derivative_audit.py 2>&1 | tee slice_derivative_audit.log
+          grep -F 'Total states cached: 299 (expected: 299)' slice_derivative_audit.log
+          grep -F "Exact step residuals: ['0', '0', '0']" slice_derivative_audit.log
+          grep -F 'Exact global residual: 0' slice_derivative_audit.log
+          grep -F 'V53 exact audit gate: CLOSED / ZERO_RESIDUAL' slice_derivative_audit.log
+
+      - name: Write v53 kernel receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path.cwd()
+          source = root / 'HatSliceCalculusV53.lean'
+          lean_log = root / 'HatSliceCalculusV53.kernel.log'
+          audit_source = root / 'slice_derivative_audit.py'
+          audit_log = root / 'slice_derivative_audit.log'
+          text = lean_log.read_text()
+          receipt = {
+              'schema': 'hat-slice-calculus-v53-kernel-receipt/1.0',
+              'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
+              'lean_commit': '62eed1db4d67327ec8120be05f1a1b0847d74561',
+              'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
+              'lean_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+              'lean_log_sha256': hashlib.sha256(lean_log.read_bytes()).hexdigest(),
+              'audit_source_sha256': hashlib.sha256(audit_source.read_bytes()).hexdigest(),
+              'audit_log_sha256': hashlib.sha256(audit_log.read_bytes()).hexdigest(),
+              'lean_version_output': (root / 'v53-lean-version.log').read_text().strip(),
+              'sorryAx_absent': 'sorryAx' not in text,
+              'native_decide_axiom_absent': '_native.native_decide.ax_' not in text,
+              'exact_cached_states': 299,
+              'exact_residuals_zero': True,
+          }
+          (root / 'V53_KERNEL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Upload v53 kernel evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hat-slice-calculus-v53-rc1-kernel-evidence
+          path: |
+            HatSliceCalculusV53.lean
+            HatSliceCalculusV53.kernel.log
+            slice_derivative_audit.py
+            slice_derivative_audit.log
+            V53_KERNEL_RECEIPT.json
+            v53-lean-version.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
