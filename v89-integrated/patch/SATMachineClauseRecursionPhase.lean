@@ -53,14 +53,29 @@ theorem run_canonicalCNFLiteralEvaluated_to_nextLiteralSign
       (CNF.literalCodec.encode nextLiteral) restLiteralPayload restPayload
       assignment suffix := by
   rw [canonicalCNFLiteralEvaluatedConfig_eq_clauseHistoryFindConfig_next]
-  have h := run_clauseHistoryFind_to_literalSign
-    formulaValue (clauseValue || CNF.Literal.eval assignment literal)
-    (CNF.literalSign nextLiteral)
-    variableCount remainingClauses 1 remainingLiterals
-    (cnfLiteralIndex literal + 2)
-    (CNF.literalIndexBits nextLiteral)
-    restLiteralPayload restPayload assignment suffix
-  simpa [CNF.literalCodec_encode_layout] using h
+  cases nextLiteral with
+  | positive nextIndex =>
+      rw [CNF.literalCodec_encode_positive_layout]
+      have h := run_clauseHistoryFind_to_literalSign
+        formulaValue (clauseValue || CNF.Literal.eval assignment literal) true
+        variableCount remainingClauses 1 remainingLiterals
+        (cnfLiteralIndex literal + 2)
+        (List.replicate nextIndex true ++ [false])
+        restLiteralPayload restPayload assignment suffix
+      rw [show cnfLiteralIndex literal + 8 =
+          (cnfLiteralIndex literal + 2) + 2 * 1 + 4 by omega]
+      exact h
+  | negative nextIndex =>
+      rw [CNF.literalCodec_encode_negative_layout]
+      have h := run_clauseHistoryFind_to_literalSign
+        formulaValue (clauseValue || CNF.Literal.eval assignment literal) false
+        variableCount remainingClauses 1 remainingLiterals
+        (cnfLiteralIndex literal + 2)
+        (List.replicate nextIndex true ++ [false])
+        restLiteralPayload restPayload assignment suffix
+      rw [show cnfLiteralIndex literal + 8 =
+          (cnfLiteralIndex literal + 2) + 2 * 1 + 4 by omega]
+      exact h
 
 /-- The actual total evaluator may differ from its canonical logical post-state
 only by the already-proved trailing-blank relation.  Continuing through the
