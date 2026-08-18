@@ -200,6 +200,7 @@ def CostedWTCObstruction.toResidue {I : SubsetSumFW}
     have hf : linearRun c.modulus c.positive (I.values.map wordValue) idx = false := by
       simpa [idx] using c.targetAbsent
     rw [hf] at hr
+    simp at hr
 }
 
 /-- Native WTC cost certificates prove exact source UNSAT. -/
@@ -235,26 +236,30 @@ theorem minCosted_none_iff {I : SubsetSumFW} (cs : List (CostedWTCObstruction I)
   cases cs with
   | nil => simp [minCosted]
   | cons c cs =>
-      cases h : minCosted cs <;> simp [minCosted, h]
+      cases hm : minCosted cs with
+      | none => simp [minCosted, hm]
+      | some d =>
+          by_cases hcd : c.cost ≤ d.cost <;> simp [minCosted, hm, hcd]
 
 /-- The selected minimum is one of the input candidates. -/
 theorem minCosted_mem {I : SubsetSumFW} {cs : List (CostedWTCObstruction I)}
     {chosen : CostedWTCObstruction I} (h : minCosted cs = some chosen) : chosen ∈ cs := by
-  induction cs with
+  induction cs generalizing chosen with
   | nil => simp [minCosted] at h
   | cons c cs ih =>
       cases hm : minCosted cs with
       | none =>
           have hnil : cs = [] := (minCosted_none_iff cs).mp hm
           subst cs
-          simp [minCosted] at h
-          simpa [h]
+          have hchosen : chosen = c := by simpa [minCosted] using h.symm
+          subst chosen
+          simp
       | some d =>
           by_cases hcd : c.cost ≤ d.cost
-          · simp [minCosted, hm, hcd] at h
+          · have hchosen : chosen = c := by simpa [minCosted, hm, hcd] using h.symm
             subst chosen
             simp
-          · simp [minCosted, hm, hcd] at h
+          · have hchosen : chosen = d := by simpa [minCosted, hm, hcd] using h.symm
             subst chosen
             exact List.mem_cons_of_mem c (ih hm)
 
@@ -262,30 +267,34 @@ theorem minCosted_mem {I : SubsetSumFW} {cs : List (CostedWTCObstruction I)}
 theorem minCosted_minimal {I : SubsetSumFW} {cs : List (CostedWTCObstruction I)}
     {chosen : CostedWTCObstruction I} (h : minCosted cs = some chosen)
     {c : CostedWTCObstruction I} (hc : c ∈ cs) : chosen.cost ≤ c.cost := by
-  induction cs with
+  induction cs generalizing chosen c with
   | nil => simp at hc
   | cons a as ih =>
       cases hm : minCosted as with
       | none =>
           have hnil : as = [] := (minCosted_none_iff as).mp hm
           subst as
-          simp [minCosted] at h
+          have hchosen : chosen = a := by simpa [minCosted] using h.symm
+          have hcEq : c = a := by simpa using hc
           subst chosen
-          simpa using hc
+          subst c
+          exact Nat.le_refl _
       | some d =>
           have hdm : ∀ {x : CostedWTCObstruction I}, x ∈ as → d.cost ≤ x.cost := by
             intro x hx
             exact ih hm hx
           by_cases had : a.cost ≤ d.cost
-          · simp [minCosted, hm, had] at h
+          · have hchosen : chosen = a := by simpa [minCosted, hm, had] using h.symm
             subst chosen
-            rcases List.mem_cons.mp hc with rfl | hc'
-            · exact Nat.le_refl _
+            rcases List.mem_cons.mp hc with hcEq | hc'
+            · subst c
+              exact Nat.le_refl _
             · exact Nat.le_trans had (hdm hc')
-          · simp [minCosted, hm, had] at h
+          · have hchosen : chosen = d := by simpa [minCosted, hm, had] using h.symm
             subst chosen
-            rcases List.mem_cons.mp hc with rfl | hc'
-            · exact Nat.le_of_lt (Nat.lt_of_not_ge had)
+            rcases List.mem_cons.mp hc with hcEq | hc'
+            · subst c
+              exact Nat.le_of_lt (Nat.lt_of_not_ge had)
             · exact hdm hc'
 
 /-- Cost-aware WTC selector. -/
