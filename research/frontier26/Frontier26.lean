@@ -43,7 +43,6 @@ def activePayload {m : Nat} : List (Fin m) → List Nat
   | nil => simp [activePayload]
   | cons r rs ih =>
       simp [activePayload, ih, Nat.mul_succ]
-      omega
 
 @[simp] theorem bitmapWords_length (m : Nat) (s : WTCF25.ResidueState m) :
     (bitmapWords m s).length = m := by
@@ -182,8 +181,8 @@ theorem tryCosted_mem_collect {I : SubsetSumFW} {mods : List Nat}
         | none =>
             simpa [WTCF25.collectCosted, ha] using ih hm ht
         | some d =>
-            exact List.mem_cons_of_mem d (by
-              simpa [WTCF25.collectCosted, ha] using ih hm ht)
+            rw [WTCF25.collectCosted, ha]
+            exact List.mem_cons_of_mem d (ih hm ht)
 
 /-- Adaptive cost selector: reorder the same searched set, then apply the certified argmin. -/
 def chooseAdaptiveCosted (I : SubsetSumFW) (cutoff : Nat) (mods : List Nat) :
