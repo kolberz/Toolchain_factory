@@ -19,7 +19,7 @@ theorem abs_sum_le_sum_abs_finset {β : Type*} [DecidableEq β]
   | empty => simp
   | @insert a s ha ih =>
       simp only [Finset.sum_insert ha]
-      exact (abs_add _ _).trans (add_le_add_left ih _)
+      exact (abs_add_le _ _).trans (add_le_add_left ih _)
 
 /-- The absolute insertion-derivative sum is bounded by the sum of absolute derivatives. -/
 theorem abs_insertion_deriv_sum_le_sum_abs
@@ -74,7 +74,7 @@ theorem slice_average_global_bound
       (∑ S ∈ deletionSlice U m, L S) / ((deletionSlice U m).card : ℚ)
     |A k - A 0| ≤ ∑ j ∈ Finset.range k, pairAbsAverage U L j := by
   intro A
-  induction k generalizing hk with
+  induction k with
   | zero => simp
   | succ k ih =>
       have hk_step : k + 1 ≤ U.card := by simpa [Nat.succ_eq_add_one] using hk
@@ -88,7 +88,7 @@ theorem slice_average_global_bound
       rw [hdecomp]
       calc
         |(A (k + 1) - A k) + (A k - A 0)|
-            ≤ |A (k + 1) - A k| + |A k - A 0| := abs_add _ _
+            ≤ |A (k + 1) - A k| + |A k - A 0| := abs_add_le _ _
         _ ≤ pairAbsAverage U L k +
               (∑ j ∈ Finset.range k, pairAbsAverage U L j) :=
             add_le_add hstep hprev
