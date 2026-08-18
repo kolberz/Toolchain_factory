@@ -1,0 +1,119 @@
+name: Verify Frontier 26 calibrated adaptive residue
+
+on:
+  push:
+    branches: [agent/frontier26-calibrated-adaptive]
+    paths: ['research/frontier26/**', '.github/workflows/verify-frontier26.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  verify-frontier26:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Publish run locator
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          target="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -nc --arg state pending --arg context frontier26-run --arg target_url "$target" --arg description "Frontier 26 run $GITHUB_RUN_ID" '{state:$state,context:$context,target_url:$target_url,description:$description}' >/tmp/status.json
+          curl --fail-with-body -sS -L -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" --data-binary @/tmp/status.json
+
+      - name: Install exact Lean 4.33.0-rc1
+        run: |
+          set -euo pipefail
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.33.0-rc1
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/lean" --version | tee /tmp/lean-version.txt
+          grep -F '4.33.0-rc1' /tmp/lean-version.txt
+          grep -F '62eed1d' /tmp/lean-version.txt
+
+      - name: Reconstruct and authenticate Frontier 23 closure
+        run: |
+          set -euo pipefail
+          mkdir -p research/frontier25/formal frontier26-evidence/logs
+          cat research/frontier25/closure-parts/part-* >/tmp/frontier23-formal-closure.tar.gz
+          echo '2651de483bdbfe289270e746b6fbd9aabd8117d0e65c3e8727616d893c898d78  /tmp/frontier23-formal-closure.tar.gz' | sha256sum -c - | tee frontier26-evidence/logs/closure-archive-hash.log
+          tar -C research/frontier25/formal -xzf /tmp/frontier23-formal-closure.tar.gz
+          (cd research/frontier25/formal && sha256sum -c ../frontier23-source.sha256) | tee frontier26-evidence/logs/frontier23-source-hash.log
+
+      - name: Recompile Frontier 23 WTC CNF LRAT closure
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier25/formal"
+          cd research/frontier25/formal
+          modules=(SSATseitin ExprCompiler FixedWidth Complexity SharedAdder SharedRipple SubsetSumFW SharedSubsetItem SharedSelectedSum SharedSubsetFrontend WordNat SubsetSumNat NaturalSubsetFrontend ClosedNaturalSubset ModularObstruction StrategyCompiler ResolutionCertificate ResolutionBridge FallbackRawResolution FallbackRawLRATBridge GCDStrategy GCDExamples ResidueReachability ResidueStrategy ResidueFallbackResolution ResidueFallbackLRATBridge)
+          : > ../../../frontier26-evidence/logs/frontier23-recompile.log
+          for m in "${modules[@]}"; do echo "=== $m ===" | tee -a ../../../frontier26-evidence/logs/frontier23-recompile.log; /usr/bin/time -v lean -o "$m.olean" "$m.lean" >>../../../frontier26-evidence/logs/frontier23-recompile.log 2>&1; done
+          tail -100 ../../../frontier26-evidence/logs/frontier23-recompile.log
+
+      - name: Recompile Frontier 24 parent
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier24:$PWD/research/frontier25/formal"
+          cd research/frontier24
+          /usr/bin/time -v lean -o Frontier24.olean Frontier24.lean >../../frontier26-evidence/logs/Frontier24-parent.log 2>&1
+          cat ../../frontier26-evidence/logs/Frontier24-parent.log
+
+      - name: Recompile Frontier 25 parent
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier25:$PWD/research/frontier25/formal:$PWD/research/frontier24"
+          cd research/frontier25
+          /usr/bin/time -v lean -o Frontier25.olean Frontier25.lean >../../frontier26-evidence/logs/Frontier25-parent.log 2>&1
+          cat ../../frontier26-evidence/logs/Frontier25-parent.log
+
+      - name: Compile Frontier 26
+        run: |
+          set -euo pipefail
+          export LEAN_PATH="$PWD/research/frontier26:$PWD/research/frontier25:$PWD/research/frontier25/formal:$PWD/research/frontier24"
+          cd research/frontier26
+          /usr/bin/time -v lean -o Frontier26.olean Frontier26.lean >../../frontier26-evidence/logs/Frontier26.log 2>&1
+          cat ../../frontier26-evidence/logs/Frontier26.log
+
+      - name: Semantic negative controls
+        run: |
+          set -euo pipefail
+          cd research/frontier26
+          printf 'import Frontier26\nopen WTCF26\nexample : calibratedScore calibrationDemo 5 = 10 := by decide\n' > NegativeWrongCalibratedSize.lean
+          printf 'import Frontier26\nopen WTCF26\nexample : adaptiveOrder calibrationDemo calibrationCutoff calibrationOrder = calibrationOrder := by decide\n' > NegativeStaticAdaptiveOrder.lean
+          printf 'import Frontier26\nopen WTCF26\nexample : modulusSearchWork (adaptiveOrder calibrationDemo calibrationCutoff calibrationOrder) = 3 := by decide\n' > NegativeSearchWork.lean
+          printf 'import Frontier26\nopen WTCF26\nexample : portfolioMaterializationWork calibrationDemo calibrationOrder = 29 := by decide\n' > NegativeMaterializationWork.lean
+          printf 'import Frontier26\nopen WTCF26\nexample : (chooseFirstCosted calibrationDemo (adaptiveOrder calibrationDemo calibrationCutoff calibrationOrder)).map (fun c => c.modulus) = some 4 := by decide\n' > NegativeAdaptiveChoice.lean
+          printf 'import Frontier26\nopen WTCF26\nexample : isResidue (chooseAdaptivePortfolio WTCF23.residueFallback 9) = true := by decide\n' > NegativeFallbackBranch.lean
+          export LEAN_PATH="$PWD:$PWD/../frontier25:$PWD/../frontier25/formal:$PWD/../frontier24"
+          for f in Negative*.lean; do log="../../frontier26-evidence/logs/${f%.lean}.log"; set +e; lean "$f" >"$log" 2>&1; rc=$?; set -e; cat "$log"; [[ $rc -ne 0 ]] || { echo "unexpected compile: $f"; exit 1; }; ! grep -Eqi 'unknown module|unknown module prefix|file.*not found|unknown identifier|unexpected token' "$log" || { echo "infrastructure failure: $f"; exit 1; }; echo "$f: SEMANTICALLY_REJECTED"; done
+
+      - name: Hygiene and manifest
+        run: |
+          set -euo pipefail
+          if grep -R -n -E '\b(sorry|admit|sorryAx|native_decide)\b' research/frontier26 --include='*.lean'; then exit 1; fi
+          sha256sum research/frontier26/Frontier26.lean research/frontier25/Frontier25.lean research/frontier24/Frontier24.lean research/frontier25/formal/*.lean .github/workflows/verify-frontier26.yml | tee frontier26-evidence/SHA256SUMS.txt
+          cp /tmp/lean-version.txt frontier26-evidence/lean-version.txt
+          printf '%s\n' \
+            'F23_SOURCE_CLOSURE=HASHED_RECOMPILED' \
+            'F24_PARENT=RECOMPILED' \
+            'F25_PARENT=RECOMPILED' \
+            'F26_EVIDENCE_COST=EXACT_STRUCTURAL_WORD_CALIBRATION' \
+            'F26_SEARCH_WORK=SEPARATE_ATTEMPT_COUNT' \
+            'F26_MATERIALIZATION=EXACT_SUM_N_TIMES_MODULI' \
+            'F26_ADAPTIVE_SET=PRESERVED' \
+            'F26_ADAPTIVE_ARGMIN=ORIGINAL_SEARCH_SET' \
+            'F26_COUNTEREXAMPLE=STATIC_10_WORDS_ADAPTIVE_9_WORDS' \
+            'NEGATIVE_CONTROLS=6_SEMANTIC_REJECTIONS' >frontier26-evidence/VERIFICATION.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontier26-verification-evidence
+          path: frontier26-evidence/**
+          if-no-files-found: warn
+          compression-level: 6
+          retention-days: 90
