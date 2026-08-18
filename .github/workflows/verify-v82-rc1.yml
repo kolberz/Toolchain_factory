@@ -1,0 +1,139 @@
+name: Verify Hat Proof-Carrying Cavity v82 on Lean 4.33.0-rc1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'HatLocalDelaunayV80.lean'
+      - 'HatProofCarryingCavityV82.lean'
+      - '.github/workflows/verify-v82-rc1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-v82-rc1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Toolchain_factory
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install elan
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch pinned Mathlib and exact Lean toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/leanprover-community/mathlib4.git /tmp/mathlib4
+          cd /tmp/mathlib4
+          git checkout 79d0395a1825a6264ad5d269e35e60537518955e
+          printf '%s\n' 'leanprover/lean4:v4.33.0-rc1' > lean-toolchain
+          lake env lean --version | tee "$GITHUB_WORKSPACE/v82-lean-version.log"
+          test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          test "$(git rev-parse HEAD)" = '79d0395a1825a6264ad5d269e35e60537518955e'
+
+      - name: Restore Mathlib cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/mathlib4
+          lake exe cache get
+
+      - name: Verify canonical source hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum HatLocalDelaunayV80.lean | awk '{print $1}')" = '4669face466d4c7c4b933faa682e1d2012927078c7531efe2ee214fba1184d7d'
+          test "$(sha256sum HatProofCarryingCavityV82.lean | awk '{print $1}')" = '85ee5457bb78bdde7711092752b050be6e52dc187af75966cc6c048ba2c8a77f'
+          sha256sum HatLocalDelaunayV80.lean HatProofCarryingCavityV82.lean | tee V82_FORMAL_SOURCES.sha256
+
+      - name: Kernel elaborate canonical v80 and v82 composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/HatLocalDelaunayV80.lean" /tmp/mathlib4/HatLocalDelaunayV80.lean
+          cp "$GITHUB_WORKSPACE/HatProofCarryingCavityV82.lean" /tmp/mathlib4/HatProofCarryingCavityV82.lean
+          cd /tmp/mathlib4
+          mkdir -p .lake/build/lib/lean
+          lake env lean -o .lake/build/lib/lean/HatLocalDelaunayV80.olean HatLocalDelaunayV80.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatLocalDelaunayV80.v82-import.kernel.log"
+          lake env lean HatProofCarryingCavityV82.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatProofCarryingCavityV82.kernel.log"
+
+      - name: Audit proof output
+        shell: bash
+        run: |
+          set -euo pipefail
+          V80="$GITHUB_WORKSPACE/HatLocalDelaunayV80.v82-import.kernel.log"
+          V82="$GITHUB_WORKSPACE/HatProofCarryingCavityV82.kernel.log"
+          test -s "$V80"
+          test -s "$V82"
+          for LOG in "$V80" "$V82"; do
+            if grep -Fq 'sorryAx' "$LOG"; then
+              echo "Rejected: sorryAx found in $LOG" >&2
+              exit 1
+            fi
+            if grep -Fq '_native.native_decide.ax_' "$LOG"; then
+              echo "Rejected: native_decide axiom found in $LOG" >&2
+              exit 1
+            fi
+          done
+          grep -F 'HatV80.allLocalLegal_localUpdate' "$V80"
+          grep -F 'HatV82.changedLegal_of_constructionReceipts' "$V82"
+          grep -F 'HatV82.allLocalLegal_proofCarryingUpdate' "$V82"
+          grep -F 'HatV82.allLocalLegal_proofCarryingChain' "$V82"
+          grep -F 'HatV82.missing_changed_edge_contradicts_receipt_coverage' "$V82"
+
+      - name: Write v82 formal receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path.cwd()
+          v80 = root / 'HatLocalDelaunayV80.lean'
+          v82 = root / 'HatProofCarryingCavityV82.lean'
+          v80log = root / 'HatLocalDelaunayV80.v82-import.kernel.log'
+          v82log = root / 'HatProofCarryingCavityV82.kernel.log'
+          proof_text = v80log.read_text() + '\n' + v82log.read_text()
+          receipt = {
+              'schema': 'hat-proof-carrying-cavity-v82-formal-receipt/1.0',
+              'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
+              'lean_commit': '62eed1db4d67327ec8120be05f1a1b0847d74561',
+              'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
+              'canonical_v80_source_sha256': hashlib.sha256(v80.read_bytes()).hexdigest(),
+              'v82_source_sha256': hashlib.sha256(v82.read_bytes()).hexdigest(),
+              'v80_kernel_log_sha256': hashlib.sha256(v80log.read_bytes()).hexdigest(),
+              'v82_kernel_log_sha256': hashlib.sha256(v82log.read_bytes()).hexdigest(),
+              'lean_version_output': (root / 'v82-lean-version.log').read_text().strip(),
+              'sorryAx_absent': 'sorryAx' not in proof_text,
+              'native_decide_axiom_absent': '_native.native_decide.ax_' not in proof_text,
+              'receipt_classes': ['earDiagonal', 'cavitySeam'],
+              'coverage_theorem': 'HatV82.changedLegal_of_constructionReceipts',
+              'composition_theorem': 'HatV82.allLocalLegal_proofCarryingUpdate',
+              'chain_theorem': 'HatV82.allLocalLegal_proofCarryingChain',
+              'falsification_theorem': 'HatV82.missing_changed_edge_contradicts_receipt_coverage',
+          }
+          (root / 'V82_FORMAL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Upload v82 formal evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hat-proof-carrying-cavity-v82-rc1-formal-evidence
+          path: |
+            HatLocalDelaunayV80.lean
+            HatProofCarryingCavityV82.lean
+            HatLocalDelaunayV80.v82-import.kernel.log
+            HatProofCarryingCavityV82.kernel.log
+            V82_FORMAL_SOURCES.sha256
+            V82_FORMAL_RECEIPT.json
+            v82-lean-version.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
