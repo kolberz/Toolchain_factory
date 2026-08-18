@@ -11,7 +11,7 @@ structure Group where
   deriving Repr
 
 def activationWeight (r f : Nat) : ℚ :=
-  ∑ j in Finset.range 240,
+  ∑ j ∈ Finset.range 240,
     if h₁ : r ≤ j then
       let q := j - r
       let top := 1599 - r - f
