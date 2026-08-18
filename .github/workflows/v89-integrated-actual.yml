@@ -61,17 +61,61 @@ jobs:
 
       - name: Install exact Lean toolchain with elan
         run: |
-          set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
-          sh /tmp/elan-init.sh -y --default-toolchain none
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.elan/bin:$PATH"
-          cd v89-integrated/actual-src
-          TOOLCHAIN="$(cat lean-toolchain)"
-          elan toolchain install "$TOOLCHAIN" 2>&1 | tee ../V89_TOOLCHAIN_INSTALL.log
-          elan default "$TOOLCHAIN"
-          lean --version | tee ../V89_LEAN_VERSION.txt
-          lake --version | tee ../V89_LAKE_VERSION.txt
+          set -uo pipefail
+          LOG="$GITHUB_WORKSPACE/v89-integrated/V89_TOOLCHAIN_INSTALL.log"
+          : > "$LOG"
+          {
+            echo 'stage=curl-elan-init'
+            curl -fL --retry 3 --retry-delay 2 \
+              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+              -o /tmp/elan-init.sh
+            CURL_RC=$?
+            echo "curl_rc=$CURL_RC"
+            if [ "$CURL_RC" -ne 0 ]; then exit "$CURL_RC"; fi
+
+            echo 'stage=run-elan-init'
+            sh /tmp/elan-init.sh -y --default-toolchain none
+            INIT_RC=$?
+            echo "elan_init_rc=$INIT_RC"
+            if [ "$INIT_RC" -ne 0 ]; then exit "$INIT_RC"; fi
+
+            echo 'stage=resolve-elan'
+            export PATH="$HOME/.elan/bin:$PATH"
+            echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+            command -v elan
+            ELAN_WHICH_RC=$?
+            echo "elan_which_rc=$ELAN_WHICH_RC"
+            if [ "$ELAN_WHICH_RC" -ne 0 ]; then exit "$ELAN_WHICH_RC"; fi
+
+            cd "$GITHUB_WORKSPACE/v89-integrated/actual-src"
+            TOOLCHAIN="$(cat lean-toolchain)"
+            echo "toolchain=$TOOLCHAIN"
+
+            echo 'stage=elan-toolchain-install'
+            elan toolchain install "$TOOLCHAIN"
+            INSTALL_RC=$?
+            echo "toolchain_install_rc=$INSTALL_RC"
+            if [ "$INSTALL_RC" -ne 0 ]; then exit "$INSTALL_RC"; fi
+
+            echo 'stage=elan-default'
+            elan default "$TOOLCHAIN"
+            DEFAULT_RC=$?
+            echo "elan_default_rc=$DEFAULT_RC"
+            if [ "$DEFAULT_RC" -ne 0 ]; then exit "$DEFAULT_RC"; fi
+
+            echo 'stage=versions'
+            lean --version | tee "$GITHUB_WORKSPACE/v89-integrated/V89_LEAN_VERSION.txt"
+            LEAN_RC=${PIPESTATUS[0]}
+            echo "lean_version_rc=$LEAN_RC"
+            if [ "$LEAN_RC" -ne 0 ]; then exit "$LEAN_RC"; fi
+            lake --version | tee "$GITHUB_WORKSPACE/v89-integrated/V89_LAKE_VERSION.txt"
+            LAKE_RC=${PIPESTATUS[0]}
+            echo "lake_version_rc=$LAKE_RC"
+            if [ "$LAKE_RC" -ne 0 ]; then exit "$LAKE_RC"; fi
+          } >> "$LOG" 2>&1
+          RC=$?
+          cat "$LOG"
+          exit "$RC"
 
       - name: Build actual clause-history and recursion seam
         working-directory: v89-integrated/actual-src
