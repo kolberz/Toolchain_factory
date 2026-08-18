@@ -71,7 +71,9 @@ theorem linearStep_true_iff {m v : Nat} (hm : 0 < m) (s : ResidueState m) (r : F
         have hfin : q + a = r := by
           apply Fin.ext
           have hv := val_add_shift hm v q
-          simpa [Nat.add_comm] using hv.trans hsum
+          have hsum' : (q.val + v) % m = r.val := by
+            simpa [Nat.add_comm] using hsum
+          exact hv.trans hsum'
         have hp : r - a = q := by
           rw [← hfin]
           exact fin_add_sub_cancel hm q a
@@ -83,7 +85,8 @@ theorem linearRun_exact {m : Nat} (hm : 0 < m) (vals : List Nat) (r : Fin m) :
     linearRun m hm vals r = true ↔ WTCF24.ExactReachable m vals r := by
   induction vals generalizing r with
   | nil =>
-      simpa [linearRun] using (WTCF24.indexedRun_exact hm ([] : List Nat) r)
+      simpa [linearRun, WTCF24.indexedRun] using
+        (WTCF24.indexedRun_exact hm ([] : List Nat) r)
   | cons v vs ih =>
       rw [linearRun, linearStep_true_iff hm]
       rw [WTCF24.exactReachable_cons hm]
@@ -188,5 +191,207 @@ def CostedWTCObstruction.toResidue {I : SubsetSumFW}
   modulusPos := c.positive
   targetAbsent := by
     intro hmem
-    let idx := WTCF24.targetFin c.modulus c.positive (wordValue I.target)
-    have h
+    let idx : Fin c.modulus :=
+      WTCF24.targetFin c.modulus c.positive (wordValue I.target)
+    have hmemIdx : idx.val ∈ WTCF23.reachableResidues c.modulus I.values := by
+      simpa [idx, WTCF24.targetFin] using hmem
+    have hr : linearRun c.modulus c.positive (I.values.map wordValue) idx = true :=
+      (linearRun_iff_reachableResidues c.positive I.values idx).mpr hmemIdx
+    have hf : linearRun c.modulus c.positive (I.values.map wordValue) idx = false := by
+      simpa [idx] using c.targetAbsent
+    rw [hf] at hr
+}
+
+/-- Native WTC cost certificates prove exact source UNSAT. -/
+theorem no_source_witness_of_costed {I : SubsetSumFW} (c : CostedWTCObstruction I) :
+    ¬ ∃ base : Assignment, naturalSubsetAccepts I base :=
+  WTCF23.no_source_witness_of_residue c.toResidue
+
+/-- Native WTC cost certificates transport through the historical compiled-CNF bridge. -/
+theorem target_unsat_of_costed {I : SubsetSumFW} (hI : I.WellFormed)
+    (c : CostedWTCObstruction I) :
+    ¬ ∃ a, SatCNF a (compileProgram (compileClosedSubset I).insts
+      (compileClosedSubset I).output) :=
+  WTCF23.target_unsat_of_residue hI c.toResidue
+
+/-- Collect every successful costed residue proof in portfolio order. -/
+def collectCosted (I : SubsetSumFW) : List Nat → List (CostedWTCObstruction I)
+  | [] => []
+  | m :: ms =>
+      match tryCosted I m with
+      | some c => c :: collectCosted I ms
+      | none => collectCosted I ms
+
+/-- Exact recursive minimum. Ties preserve earlier candidate order. -/
+def minCosted {I : SubsetSumFW} : List (CostedWTCObstruction I) → Option (CostedWTCObstruction I)
+  | [] => none
+  | c :: cs =>
+      match minCosted cs with
+      | none => some c
+      | some d => if c.cost ≤ d.cost then some c else some d
+
+theorem minCosted_none_iff {I : SubsetSumFW} (cs : List (CostedWTCObstruction I)) :
+    minCosted cs = none ↔ cs = [] := by
+  cases cs with
+  | nil => simp [minCosted]
+  | cons c cs =>
+      cases h : minCosted cs <;> simp [minCosted, h]
+
+/-- The selected minimum is one of the input candidates. -/
+theorem minCosted_mem {I : SubsetSumFW} {cs : List (CostedWTCObstruction I)}
+    {chosen : CostedWTCObstruction I} (h : minCosted cs = some chosen) : chosen ∈ cs := by
+  induction cs with
+  | nil => simp [minCosted] at h
+  | cons c cs ih =>
+      cases hm : minCosted cs with
+      | none =>
+          have hnil : cs = [] := (minCosted_none_iff cs).mp hm
+          subst cs
+          simp [minCosted] at h
+          simpa [h]
+      | some d =>
+          by_cases hcd : c.cost ≤ d.cost
+          · simp [minCosted, hm, hcd] at h
+            subst chosen
+            simp
+          · simp [minCosted, hm, hcd] at h
+            subst chosen
+            exact List.mem_cons_of_mem c (ih hm)
+
+/-- Generic argmin theorem: the chosen certificate has cost no greater than every candidate. -/
+theorem minCosted_minimal {I : SubsetSumFW} {cs : List (CostedWTCObstruction I)}
+    {chosen : CostedWTCObstruction I} (h : minCosted cs = some chosen)
+    {c : CostedWTCObstruction I} (hc : c ∈ cs) : chosen.cost ≤ c.cost := by
+  induction cs with
+  | nil => simp at hc
+  | cons a as ih =>
+      cases hm : minCosted as with
+      | none =>
+          have hnil : as = [] := (minCosted_none_iff as).mp hm
+          subst as
+          simp [minCosted] at h
+          subst chosen
+          simpa using hc
+      | some d =>
+          have hdm : ∀ {x : CostedWTCObstruction I}, x ∈ as → d.cost ≤ x.cost := by
+            intro x hx
+            exact ih hm hx
+          by_cases had : a.cost ≤ d.cost
+          · simp [minCosted, hm, had] at h
+            subst chosen
+            rcases List.mem_cons.mp hc with rfl | hc'
+            · exact Nat.le_refl _
+            · exact Nat.le_trans had (hdm hc')
+          · simp [minCosted, hm, had] at h
+            subst chosen
+            rcases List.mem_cons.mp hc with rfl | hc'
+            · exact Nat.le_of_lt (Nat.lt_of_not_ge had)
+            · exact hdm hc'
+
+/-- Cost-aware WTC selector. -/
+def chooseCosted (I : SubsetSumFW) (mods : List Nat) : Option (CostedWTCObstruction I) :=
+  minCosted (collectCosted I mods)
+
+/-- Chosen cost is globally minimal over every successful candidate in the declared portfolio. -/
+theorem chooseCosted_minimal {I : SubsetSumFW} {mods : List Nat}
+    {chosen : CostedWTCObstruction I} (h : chooseCosted I mods = some chosen)
+    {c : CostedWTCObstruction I} (hc : c ∈ collectCosted I mods) :
+    chosen.cost ≤ c.cost :=
+  minCosted_minimal h hc
+
+/-- The chosen proof itself comes from the successful candidate set. -/
+theorem chooseCosted_mem {I : SubsetSumFW} {mods : List Nat}
+    {chosen : CostedWTCObstruction I} (h : chooseCosted I mods = some chosen) :
+    chosen ∈ collectCosted I mods :=
+  minCosted_mem h
+
+inductive PortfolioResult (I : SubsetSumFW) where
+  | gcd (cert : ModObstruction I)
+  | residue (cert : CostedWTCObstruction I)
+  | lrat
+
+inductive PortfolioTag where
+  | gcd (modulus : Nat)
+  | residue (modulus : Nat)
+  | lrat
+  deriving DecidableEq, Repr
+
+def PortfolioResult.tag {I : SubsetSumFW} : PortfolioResult I → PortfolioTag
+  | .gcd c => .gcd c.modulus
+  | .residue c => .residue c.modulus
+  | .lrat => .lrat
+
+/-- Exact Frontier-25 strategy order: inherited GCD, cost-aware direct residue, retained LRAT. -/
+def choosePortfolio (I : SubsetSumFW) : PortfolioResult I :=
+  match WTCF22.tryGCD I with
+  | some c => .gcd c
+  | none =>
+      match chooseCosted I WTCF23.residuePortfolioModuli with
+      | some c => .residue c
+      | none => .lrat
+
+/-- Every proof-producing Frontier-25 branch proves exact source UNSAT. -/
+theorem portfolio_certificate_sound (I : SubsetSumFW) :
+    match choosePortfolio I with
+    | .gcd c => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
+    | .residue c => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
+    | .lrat => True := by
+  unfold choosePortfolio
+  cases hg : WTCF22.tryGCD I with
+  | some c => exact WTCF21.no_source_witness_of_mod c
+  | none =>
+      cases hc : chooseCosted I WTCF23.residuePortfolioModuli with
+      | none => trivial
+      | some c => exact no_source_witness_of_costed c
+
+/-- Retained GCD branch remains unchanged. -/
+example : (choosePortfolio WTCF22.nonPow2Demo).tag = .gcd 6 := by decide
+
+/-- Frontier-23 residue upgrade remains a residue proof and now uses the direct cost-aware state. -/
+example : (choosePortfolio WTCF23.residueUpgrade).tag = .residue 3 := by decide
+
+/-- Frontier-23 deliberately residue-inconclusive instance still falls through to LRAT. -/
+example : (choosePortfolio WTCF23.residueFallback).tag = .lrat := by decide
+
+/-- Direct cost certificate for the historical `[2,3] -> 1` upgrade. -/
+def residueUpgradeCosted : CostedWTCObstruction WTCF23.residueUpgrade := by
+  have h : (chooseCosted WTCF23.residueUpgrade WTCF23.residuePortfolioModuli).isSome = true := by decide
+  exact (chooseCosted WTCF23.residueUpgrade WTCF23.residuePortfolioModuli).get
+    (by simpa [Option.isSome_iff_ne_none] using h)
+
+/-- The historical residue-upgrade source theorem now closes through the native direct state. -/
+theorem residueUpgrade_no_source_witness_native :
+    ¬ ∃ base : Assignment, naturalSubsetAccepts WTCF23.residueUpgrade base :=
+  no_source_witness_of_costed residueUpgradeCosted
+
+/-- The historical residue-upgrade compiled WTC target is UNSAT through the native direct state. -/
+theorem residueUpgrade_target_unsat_native :
+    ¬ ∃ a, SatCNF a
+      (compileProgram (compileClosedSubset WTCF23.residueUpgrade).insts
+        (compileClosedSubset WTCF23.residueUpgrade).output) :=
+  target_unsat_of_costed WTCF21.fallbackDemo_wf residueUpgradeCosted
+
+/-- The retained standard-LRAT fallback theorem is imported and remains the final obligation. -/
+theorem residueFallback_target_unsat_native :
+    ¬ ∃ a, SatCNF a WTCF23.residueFallbackTarget :=
+  WTCF23.residue_fallback_target_unsat
+
+/-- Full retained fallback closes source UNSAT after the costed residue selector declines it. -/
+theorem residueFallback_native_closed :
+    (choosePortfolio WTCF23.residueFallback).tag = .lrat ∧
+    ¬ ∃ base : Assignment, naturalSubsetAccepts WTCF23.residueFallback base := by
+  exact ⟨by decide, WTCF23.residue_fallback_no_source_witness⟩
+
+#print axioms linearStep_true_iff
+#print axioms linearRun_exact
+#print axioms linearRunWork_exact
+#print axioms selectedValue_wordValues
+#print axioms linearRun_iff_reachableResidues
+#print axioms target_unsat_of_costed
+#print axioms chooseCosted_minimal
+#print axioms portfolio_certificate_sound
+#print axioms residueUpgrade_target_unsat_native
+#print axioms residueFallback_target_unsat_native
+#print axioms residueFallback_native_closed
+
+end WTCF25
