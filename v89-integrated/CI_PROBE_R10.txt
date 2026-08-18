@@ -1,0 +1,5 @@
+V89 focused total-history CI probe.
+base_commit=a6522179b01a747418250b7020ddb4064212239a
+round=10
+merge_target=research/v89-clause-history
+main_untouched=true
