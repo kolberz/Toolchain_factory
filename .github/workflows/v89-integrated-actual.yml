@@ -81,10 +81,12 @@ jobs:
           test "$(find v89-integrated/actual-src -type f | wc -l)" -eq 82
           test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
           grep -F '"packages": []' v89-integrated/actual-src/lake-manifest.json
+          cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean \
+            v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
           cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean \
             v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
 
-      - name: Build actual clause-history and recursion seam
+      - name: Build repaired actual clause-history and recursion seam
         working-directory: v89-integrated/actual-src
         run: |
           set -euo pipefail
