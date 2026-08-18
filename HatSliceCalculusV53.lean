@@ -93,49 +93,60 @@ theorem sum_insertion_pairs_eq_slice_sum
       (succPairs U j) (deletionSlice U (j + 1)) (fun T => T)
       (fun p => mem_succPairs U j p)
 
+  have h_mem_ins : ∀ p ∈ insertionPairs U j,
+      (insert p.2 p.1, p.2) ∈ succPairs U j := by
+    intro p hp
+    rw [mem_insertionPairs] at hp
+    rcases hp with ⟨hS, hv⟩
+    have hvU : p.2 ∈ U := (Finset.mem_sdiff.mp hv).1
+    have hvS : p.2 ∉ p.1 := (Finset.mem_sdiff.mp hv).2
+    rw [mem_succPairs]
+    refine ⟨?_, Finset.mem_insert_self _ _⟩
+    rw [deletionSlice, Finset.mem_powersetCard] at hS ⊢
+    refine ⟨Finset.insert_subset hvU hS.1, ?_⟩
+    rw [Finset.card_insert_of_not_mem hvS, hS.2]
+
+  have h_mem_del : ∀ q ∈ succPairs U j,
+      (q.1 \ {q.2}, q.2) ∈ insertionPairs U j := by
+    intro q hq
+    rw [mem_succPairs] at hq
+    rcases hq with ⟨hT, hvT⟩
+    have hTU : q.1 ⊆ U := (Finset.mem_powersetCard.mp hT).1
+    have hcardT : q.1.card = j + 1 := (Finset.mem_powersetCard.mp hT).2
+    rw [mem_insertionPairs]
+    refine ⟨?_, ?_⟩
+    · rw [deletionSlice, Finset.mem_powersetCard]
+      refine ⟨Finset.Subset.trans (Finset.sdiff_subset q.1 {q.2}) hTU, ?_⟩
+      rw [Finset.card_sdiff_of_subset (Finset.singleton_subset_iff.mpr hvT),
+          Finset.card_singleton, hcardT]
+      omega
+    · rw [Finset.mem_sdiff]
+      exact ⟨hTU hvT, by simp⟩
+
+  have h_left_inv : ∀ p ∈ insertionPairs U j,
+      ((insert p.2 p.1) \ {p.2}, p.2) = p := by
+    intro p hp
+    rw [mem_insertionPairs] at hp
+    rcases p with ⟨S, v⟩
+    simp only [Prod.fst, Prod.snd] at hp ⊢
+    have hvS : v ∉ S := (Finset.mem_sdiff.mp hp.2).2
+    rw [insert_sdiff_cancel hvS]
+
+  have h_right_inv : ∀ q ∈ succPairs U j,
+      (insert q.2 (q.1 \ {q.2}), q.2) = q := by
+    intro q hq
+    rw [mem_succPairs] at hq
+    rcases q with ⟨T, v⟩
+    simp only [Prod.fst, Prod.snd] at hq ⊢
+    rw [sdiff_insert_cancel hq.2]
+
   have h_flat :
       (∑ p ∈ insertionPairs U j, L (insert p.2 p.1)) =
         ∑ q ∈ succPairs U j, L q.1 := by
-    apply Finset.sum_bij'
-      (fun p _ => (insert p.2 p.1, p.2))
-      (fun q _ => (q.1 \ {q.2}, q.2))
-    · intro p hp
-      rw [mem_succPairs]
-      rw [mem_insertionPairs] at hp
-      rcases hp with ⟨hS, hv⟩
-      have hvU : p.2 ∈ U := (Finset.mem_sdiff.mp hv).1
-      have hvS : p.2 ∉ p.1 := (Finset.mem_sdiff.mp hv).2
-      refine ⟨?_, Finset.mem_insert_self _ _⟩
-      rw [deletionSlice, Finset.mem_powersetCard] at hS ⊢
-      refine ⟨Finset.insert_subset hvU hS.1, ?_⟩
-      rw [Finset.card_insert_of_not_mem hvS, hS.2]
-    · intro q hq
-      rw [mem_insertionPairs]
-      rw [mem_succPairs] at hq
-      rcases hq with ⟨hT, hvT⟩
-      have hTU : q.1 ⊆ U := (Finset.mem_powersetCard.mp hT).1
-      have hcardT : q.1.card = j + 1 := (Finset.mem_powersetCard.mp hT).2
-      refine ⟨?_, ?_⟩
-      · rw [deletionSlice, Finset.mem_powersetCard]
-        refine ⟨Finset.Subset.trans (Finset.sdiff_subset q.1 {q.2}) hTU, ?_⟩
-        rw [Finset.card_sdiff_of_subset (Finset.singleton_subset_iff.mpr hvT),
-            Finset.card_singleton, hcardT]
-        omega
-      · rw [Finset.mem_sdiff]
-        exact ⟨hTU hvT, by simp⟩
-    · intro p hp
-      rw [mem_insertionPairs] at hp
-      have hvS : p.2 ∉ p.1 := (Finset.mem_sdiff.mp hp.2).2
-      apply Prod.ext
-      · exact insert_sdiff_cancel hvS
-      · rfl
-    · intro q hq
-      rw [mem_succPairs] at hq
-      apply Prod.ext
-      · exact sdiff_insert_cancel hq.2
-      · rfl
-    · intro p hp
-      rfl
+    exact Finset.sum_nbij'
+      (fun p => (insert p.2 p.1, p.2))
+      (fun q => (q.1 \ {q.2}, q.2))
+      h_mem_ins h_mem_del h_left_inv h_right_inv (by intro p hp; rfl)
 
   calc
     (∑ S ∈ deletionSlice U j, ∑ v ∈ U \ S, L (insert v S))
@@ -154,6 +165,7 @@ theorem sum_insertion_pairs_eq_slice_sum
               intro T hT
               have hcard : T.card = j + 1 := (Finset.mem_powersetCard.mp hT).2
               rw [hcard]
+              norm_num
         _ = (j + 1 : ℚ) * (∑ T ∈ deletionSlice U (j + 1), L T) := by
               rw [Finset.mul_sum]
 
