@@ -36,11 +36,12 @@ jobs:
           use-mathlib-cache: false
 
       - name: Record proven toolchain
+        working-directory: v89-harness
         run: |
           set -euo pipefail
-          lean --version | tee v89-integrated/V89_LEAN_VERSION.txt
-          lake --version | tee v89-integrated/V89_LAKE_VERSION.txt
-          test "$(cat v89-harness/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          lean --version | tee ../v89-integrated/V89_LEAN_VERSION.txt
+          lake --version | tee ../v89-integrated/V89_LAKE_VERSION.txt
+          test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
 
       - name: Reconstruct and verify exact actual-v88 closure
         run: |
