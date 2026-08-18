@@ -1,0 +1,3 @@
+head=research/v89-ci-probe
+base=research/v89-clause-history
+purpose=PR-triggered CI log visibility only
