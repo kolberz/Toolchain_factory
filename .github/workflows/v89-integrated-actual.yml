@@ -26,12 +26,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import base64
-
           parts = sorted(Path('v89-integrated/xzchunks').glob('part_*'))
           expected = [12000] * 13 + [8608]
           if len(parts) != len(expected):
               raise SystemExit(f'expected 14 chunks, got {len(parts)}')
-
           alphabet = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
           payload = bytearray()
           with open('v89-integrated/V89_CHUNK_DIAGNOSTIC.txt', 'w') as log:
@@ -42,18 +40,12 @@ jobs:
                   canonical = raw[:n]
                   suffix = raw[n:]
                   bad = [(i, b) for i, b in enumerate(canonical) if b not in alphabet]
-                  print(
-                      f'{p.name}: stored={len(raw)} canonical={n} '
-                      f'suffix={len(suffix)} bad={bad[:8]} '
-                      f'suffix_hex={suffix[:32].hex()}',
-                      file=log,
-                  )
+                  print(f'{p.name}: stored={len(raw)} canonical={n} suffix={len(suffix)} bad={bad[:8]} suffix_hex={suffix[:32].hex()}', file=log)
                   if bad:
                       raise SystemExit(f'{p.name}: invalid canonical base64 bytes {bad[:8]}')
                   payload.extend(canonical)
               print(f'joined_base64_bytes={len(payload)}', file=log)
               print(f'joined_mod4={len(payload) % 4}', file=log)
-
           decoded = base64.b64decode(bytes(payload), validate=True)
           Path('v89-integrated/v89_closure.tar.xz').write_bytes(decoded)
           PY
@@ -65,16 +57,19 @@ jobs:
           test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
           grep -F '"packages": []' v89-integrated/actual-src/lake-manifest.json
 
-      - name: Set up exact Lean toolchain
-        uses: leanprover/lean-action@v1
-        with:
-          lake-package-directory: v89-integrated/actual-src
-          auto-config: true
-          build: false
-          test: false
-          lint: false
-          use-github-cache: false
-          use-mathlib-cache: false
+      - name: Install exact Lean toolchain with elan
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.elan/bin:$PATH"
+          cd v89-integrated/actual-src
+          TOOLCHAIN="$(cat lean-toolchain)"
+          elan toolchain install "$TOOLCHAIN" 2>&1 | tee ../V89_TOOLCHAIN_INSTALL.log
+          elan default "$TOOLCHAIN"
+          lean --version | tee ../V89_LEAN_VERSION.txt
+          lake --version | tee ../V89_LAKE_VERSION.txt
 
       - name: Build actual v88 transitive closure
         working-directory: v89-integrated/actual-src
@@ -97,8 +92,6 @@ jobs:
             exit 1
           fi
           sha256sum OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean | tee ../SATMachineClauseHistoryPhase.lean.sha256
-          lean --version | tee -a ../V89_ACTUAL_KERNEL.log
-          lake --version | tee -a ../V89_ACTUAL_KERNEL.log
 
       - name: Publish diagnostic receipt and recovered source snapshot
         if: always()
@@ -108,13 +101,7 @@ jobs:
           set -u
           rm -rf v89-evidence/actual-v88
           mkdir -p v89-evidence/actual-v88/sources/OpenProblems/Complexity
-          for f in \
-            V89_CHUNK_DIAGNOSTIC.txt \
-            V89_CLOSURE_SHA256.txt \
-            V89_ACTUAL_BUILD.log \
-            V89_ACTUAL_KERNEL.log \
-            SATMachineClauseHistoryPhase.lean.sha256
-          do
+          for f in V89_CHUNK_DIAGNOSTIC.txt V89_CLOSURE_SHA256.txt V89_TOOLCHAIN_INSTALL.log V89_LEAN_VERSION.txt V89_LAKE_VERSION.txt V89_ACTUAL_BUILD.log V89_ACTUAL_KERNEL.log SATMachineClauseHistoryPhase.lean.sha256; do
             if [ -f "v89-integrated/$f" ]; then cp "v89-integrated/$f" v89-evidence/actual-v88/; fi
           done
           if [ -d v89-integrated/actual-src ]; then
@@ -150,6 +137,9 @@ jobs:
           path: |
             v89-integrated/V89_CHUNK_DIAGNOSTIC.txt
             v89-integrated/V89_CLOSURE_SHA256.txt
+            v89-integrated/V89_TOOLCHAIN_INSTALL.log
+            v89-integrated/V89_LEAN_VERSION.txt
+            v89-integrated/V89_LAKE_VERSION.txt
             v89-integrated/V89_ACTUAL_BUILD.log
             v89-integrated/V89_ACTUAL_KERNEL.log
             v89-integrated/SATMachineClauseHistoryPhase.lean.sha256
