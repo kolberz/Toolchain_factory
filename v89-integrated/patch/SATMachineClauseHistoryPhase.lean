@@ -215,12 +215,12 @@ theorem run_clauseHistoryFind_to_literalSign
     have hlen : cursorMarkers.length = processedLiterals + 1 + processedWidth := by
       unfold cursorMarkers spentMarkers
       simp
+      omega
     rw [← hlen]
     rw [hcursor]
     unfold cursorMarkers spentMarkers outerLeft literalRight
     simp [List.reverse_append, List.replicate_succ, List.append_assoc,
       replicate_append_same_marker]
-    omega
   have hraw :
       satControl.run 1
         (configAt (clauseToCursor formulaValue clauseValue) blank
