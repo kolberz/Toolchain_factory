@@ -1,0 +1,105 @@
+name: Verify Hat Delaunay v68 on Lean 4.33.0-rc1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'HatActivationLedgerV68_SEALED.lean'
+      - 'v68-kernel-gate/**'
+      - '.github/workflows/verify-v68-rc1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-v68-rc1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Toolchain_factory
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install elan
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch pinned Mathlib and exact Lean toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/leanprover-community/mathlib4.git /tmp/mathlib4
+          cd /tmp/mathlib4
+          git checkout 79d0395a1825a6264ad5d269e35e60537518955e
+          printf '%s\n' 'leanprover/lean4:v4.33.0-rc1' > lean-toolchain
+          lake env lean --version | tee "$GITHUB_WORKSPACE/v68-lean-version.log"
+          test "$(cat lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          test "$(git rev-parse HEAD)" = '79d0395a1825a6264ad5d269e35e60537518955e'
+
+      - name: Restore Mathlib cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/mathlib4
+          lake exe cache get
+
+      - name: Kernel elaborate sealed v68 ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.lean" /tmp/mathlib4/HatActivationLedgerV68_SEALED.lean
+          cd /tmp/mathlib4
+          lake env lean HatActivationLedgerV68_SEALED.lean 2>&1 | tee "$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.kernel.log"
+
+      - name: Audit proof output
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$GITHUB_WORKSPACE/HatActivationLedgerV68_SEALED.kernel.log"
+          test -s "$LOG"
+          if grep -Fq 'sorryAx' "$LOG"; then
+            echo 'Rejected: sorryAx found in v68 kernel log' >&2
+            exit 1
+          fi
+          grep -F 'hat_low_order_lt' "$LOG"
+          grep -F 'triangular_low_order_lt' "$LOG"
+          grep -F 'hat_registered_final_lt' "$LOG"
+          grep -F 'triangular_registered_final_lt' "$LOG"
+
+      - name: Write v68 kernel receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          src = root / 'HatActivationLedgerV68_SEALED.lean'
+          log = root / 'HatActivationLedgerV68_SEALED.kernel.log'
+          version = (root / 'v68-lean-version.log').read_text().strip()
+          receipt = {
+              'schema': 'hat-delaunay-v68-kernel-receipt/1.0',
+              'lean_toolchain': 'leanprover/lean4:v4.33.0-rc1',
+              'mathlib_commit': '79d0395a1825a6264ad5d269e35e60537518955e',
+              'source_sha256': hashlib.sha256(src.read_bytes()).hexdigest(),
+              'kernel_log_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
+              'lean_version_output': version,
+              'sorryAx_absent': 'sorryAx' not in log.read_text(),
+          }
+          (root / 'V68_KERNEL_RECEIPT.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Upload v68 kernel evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: hat-delaunay-v68-rc1-kernel-evidence
+          path: |
+            HatActivationLedgerV68_SEALED.lean
+            HatActivationLedgerV68_SEALED.kernel.log
+            V68_KERNEL_RECEIPT.json
+            v68-lean-version.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
