@@ -21,7 +21,7 @@ theorem abs_sum_le_sum_abs_finset {β : Type*} [DecidableEq β]
   | empty => simp
   | @insert a s ha ih =>
       simp only [Finset.sum_insert ha]
-      exact (abs_add_le _ _).trans (add_le_add_left ih _)
+      exact (abs_add_le _ _).trans (add_le_add (le_refl |f a|) ih)
 
 /-- The absolute insertion-derivative sum is bounded by the sum of absolute derivatives. -/
 theorem abs_insertion_deriv_sum_le_sum_abs
