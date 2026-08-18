@@ -51,6 +51,7 @@ jobs:
           cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
           cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
           python v89-integrated/patch/build_history_valid.py v89-integrated/actual-src
+          python v89-integrated/patch/fix_history_valid_generated.py v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
           sha256sum v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
 
       - name: Compile history tower and valid context lift
