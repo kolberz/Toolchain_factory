@@ -91,7 +91,9 @@ jobs:
         run: |
           set -euo pipefail
           lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase 2>&1 | tee ../V89_ACTUAL_BUILD.log
-          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean 2>&1 | tee ../V89_RECURSION_BUILD.log
+          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseRecursionPhase.olean \
+            2>&1 | tee ../V89_RECURSION_BUILD.log
 
       - name: Kernel-audit recursive seam
         working-directory: v89-integrated/actual-src
