@@ -4,25 +4,33 @@ namespace HatV68Kernel
 
 open HatV68Sealed
 
-/-- Kernel-reduced counterpart of the low-order Hat ledger bound. -/
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+/-- Kernel proof-producing low-order Hat ledger bound. -/
 theorem hat_low_order_kernel_lt :
     ledgerBound hatGroups < 176005 / 10000000 := by
-  decide
+  norm_num [ledgerBound, hatGroups, contribution, activationWeight]
 
-/-- Kernel-reduced counterpart of the low-order triangular ledger bound. -/
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+/-- Kernel proof-producing low-order triangular ledger bound. -/
 theorem triangular_low_order_kernel_lt :
     ledgerBound triangularGroups < 255629 / 10000000 := by
-  decide
+  norm_num [ledgerBound, triangularGroups, contribution, activationWeight]
 
-/-- Kernel-reduced registered-tail Hat certificate. -/
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+/-- Kernel proof-producing registered-tail Hat certificate. -/
 theorem hat_registered_final_kernel_lt :
     ledgerBound hatGroups + registeredTail < 18291 / 1000000 := by
-  decide
+  norm_num [ledgerBound, hatGroups, contribution, activationWeight, registeredTail]
 
-/-- Kernel-reduced registered-tail triangular certificate. -/
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+/-- Kernel proof-producing registered-tail triangular certificate. -/
 theorem triangular_registered_final_kernel_lt :
     ledgerBound triangularGroups + registeredTail < 26253 / 1000000 := by
-  decide
+  norm_num [ledgerBound, triangularGroups, contribution, activationWeight, registeredTail]
 
 #print axioms hat_low_order_kernel_lt
 #print axioms triangular_low_order_kernel_lt
