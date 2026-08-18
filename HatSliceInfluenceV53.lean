@@ -6,6 +6,8 @@ variable {α : Type*} [DecidableEq α]
 
 namespace HatV53
 
+set_option maxHeartbeats 0
+
 /-- Uniform average of the absolute insertion derivative on the j-th slice. -/
 def pairAbsAverage (U : Finset α) (L : Finset α → ℚ) (j : ℕ) : ℚ :=
   (∑ S ∈ deletionSlice U j, ∑ v ∈ U \ S, |discreteDeriv L S v|) /
