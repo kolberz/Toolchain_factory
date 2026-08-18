@@ -1,0 +1,101 @@
+name: V89 History Literal Total Kernel Gate
+
+on:
+  pull_request:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-integrated/**'
+      - '.github/workflows/v89-history-total.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  history-total:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up exact rc1
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-harness
+          auto-config: true
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+
+      - name: Reconstruct exact source and generate history modules
+        run: |
+          set -euo pipefail
+          rm -rf v89-integrated/actual-src
+          mkdir -p v89-integrated/actual-src
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          parts = sorted(Path('v89-integrated/xzchunks').glob('part_*'))
+          expected = [12000] * 13 + [8608]
+          if len(parts) != 14:
+              raise SystemExit(f'expected 14 chunks, got {len(parts)}')
+          payload = b''.join(p.read_bytes()[:n] for p, n in zip(parts, expected))
+          Path('v89-integrated/v89_closure.tar.xz').write_bytes(
+              base64.b64decode(payload, validate=True))
+          PY
+          echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
+          tar -xJf v89-integrated/v89_closure.tar.xz -C v89-integrated/actual-src
+          test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+          cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
+          cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
+          python v89-integrated/patch/build_history_valid.py v89-integrated/actual-src
+          python v89-integrated/patch/fix_history_valid_generated.py v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
+          python v89-integrated/patch/build_history_default.py v89-integrated/actual-src
+          cp v89-integrated/patch/SATMachineClauseLiteralHistoryTotalPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryTotalPhase.lean
+          sha256sum v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryTotalPhase.lean
+
+      - name: Compile history tower and total induction step
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase
+          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseRecursionPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryDefaultPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryDefaultPhase.olean
+          lake env lean OpenProblems/Complexity/SATMachineClauseLiteralHistoryTotalPhase.lean \
+            -o .lake/build/lib/lean/OpenProblems/Complexity/SATMachineClauseLiteralHistoryTotalPhase.olean \
+            2>&1 | tee ../../V89_HISTORY_TOTAL_BUILD.log
+
+      - name: Kernel audit total history induction step
+        working-directory: v89-integrated/actual-src
+        run: |
+          set -euo pipefail
+          cat > V89HistoryTotalGate.lean <<'LEAN'
+          import OpenProblems.Complexity.SATMachineClauseLiteralHistoryTotalPhase
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_history_cnfLiteral_total_trailingBlankRel
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_historyCanonicalRaw_normalize
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_history_cnfLiteral_total_normalized_trailingBlankRel
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.clauseHistoryPostLiteralConfig_eq_nextFind
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_history_cnfLiteral_total_to_nextFind_trailingBlankRel
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_history_cnfLiteral_total_to_nextSign_trailingBlankRel
+          LEAN
+          lake env lean V89HistoryTotalGate.lean 2>&1 | tee ../../V89_HISTORY_TOTAL_KERNEL.log
+          for theorem in \
+            run_history_cnfLiteral_total_trailingBlankRel \
+            run_historyCanonicalRaw_normalize \
+            run_history_cnfLiteral_total_normalized_trailingBlankRel \
+            clauseHistoryPostLiteralConfig_eq_nextFind \
+            run_history_cnfLiteral_total_to_nextFind_trailingBlankRel \
+            run_history_cnfLiteral_total_to_nextSign_trailingBlankRel
+          do
+            grep -F "$theorem" ../../V89_HISTORY_TOTAL_KERNEL.log
+          done
+          if grep -F 'sorryAx' ../../V89_HISTORY_TOTAL_KERNEL.log; then
+            echo 'unexpected sorryAx' >&2
+            exit 1
+          fi
