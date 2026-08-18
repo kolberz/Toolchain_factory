@@ -1,4 +1,5 @@
 import Mathlib
+import HatActivationLedgerV68_SEALED
 
 example (n : Nat) : n + 0 = n := by
   simp
