@@ -18,7 +18,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Reconstruct and verify exact v88 closure
+      - name: Set up exact rc1 using proven v89 harness package
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: v89-harness
+          auto-config: true
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+          use-mathlib-cache: false
+
+      - name: Record proven toolchain
+        run: |
+          set -euo pipefail
+          lean --version | tee v89-integrated/V89_LEAN_VERSION.txt
+          lake --version | tee v89-integrated/V89_LAKE_VERSION.txt
+          test "$(cat v89-harness/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
+
+      - name: Reconstruct and verify exact actual-v88 closure
         run: |
           set -euo pipefail
           rm -rf v89-integrated/actual-src
@@ -46,8 +64,8 @@ jobs:
                   payload.extend(canonical)
               print(f'joined_base64_bytes={len(payload)}', file=log)
               print(f'joined_mod4={len(payload) % 4}', file=log)
-          decoded = base64.b64decode(bytes(payload), validate=True)
-          Path('v89-integrated/v89_closure.tar.xz').write_bytes(decoded)
+          Path('v89-integrated/v89_closure.tar.xz').write_bytes(
+              base64.b64decode(bytes(payload), validate=True))
           PY
           cat v89-integrated/V89_CHUNK_DIAGNOSTIC.txt
           echo '0d0f9feb75c058dfb48e3604a2325fdaf05f4880bf2fa0f3f16ff0db9edd48d5  v89-integrated/v89_closure.tar.xz' | sha256sum -c -
@@ -59,64 +77,6 @@ jobs:
           cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean \
             v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
 
-      - name: Install exact Lean toolchain with elan
-        run: |
-          set -uo pipefail
-          LOG="$GITHUB_WORKSPACE/v89-integrated/V89_TOOLCHAIN_INSTALL.log"
-          : > "$LOG"
-          {
-            echo 'stage=curl-elan-init'
-            curl -fL --retry 3 --retry-delay 2 \
-              https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-              -o /tmp/elan-init.sh
-            CURL_RC=$?
-            echo "curl_rc=$CURL_RC"
-            if [ "$CURL_RC" -ne 0 ]; then exit "$CURL_RC"; fi
-
-            echo 'stage=run-elan-init'
-            sh /tmp/elan-init.sh -y --default-toolchain none
-            INIT_RC=$?
-            echo "elan_init_rc=$INIT_RC"
-            if [ "$INIT_RC" -ne 0 ]; then exit "$INIT_RC"; fi
-
-            echo 'stage=resolve-elan'
-            export PATH="$HOME/.elan/bin:$PATH"
-            echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-            command -v elan
-            ELAN_WHICH_RC=$?
-            echo "elan_which_rc=$ELAN_WHICH_RC"
-            if [ "$ELAN_WHICH_RC" -ne 0 ]; then exit "$ELAN_WHICH_RC"; fi
-
-            cd "$GITHUB_WORKSPACE/v89-integrated/actual-src"
-            TOOLCHAIN="$(cat lean-toolchain)"
-            echo "toolchain=$TOOLCHAIN"
-
-            echo 'stage=elan-toolchain-install'
-            elan toolchain install "$TOOLCHAIN"
-            INSTALL_RC=$?
-            echo "toolchain_install_rc=$INSTALL_RC"
-            if [ "$INSTALL_RC" -ne 0 ]; then exit "$INSTALL_RC"; fi
-
-            echo 'stage=elan-default'
-            elan default "$TOOLCHAIN"
-            DEFAULT_RC=$?
-            echo "elan_default_rc=$DEFAULT_RC"
-            if [ "$DEFAULT_RC" -ne 0 ]; then exit "$DEFAULT_RC"; fi
-
-            echo 'stage=versions'
-            lean --version | tee "$GITHUB_WORKSPACE/v89-integrated/V89_LEAN_VERSION.txt"
-            LEAN_RC=${PIPESTATUS[0]}
-            echo "lean_version_rc=$LEAN_RC"
-            if [ "$LEAN_RC" -ne 0 ]; then exit "$LEAN_RC"; fi
-            lake --version | tee "$GITHUB_WORKSPACE/v89-integrated/V89_LAKE_VERSION.txt"
-            LAKE_RC=${PIPESTATUS[0]}
-            echo "lake_version_rc=$LAKE_RC"
-            if [ "$LAKE_RC" -ne 0 ]; then exit "$LAKE_RC"; fi
-          } >> "$LOG" 2>&1
-          RC=$?
-          cat "$LOG"
-          exit "$RC"
-
       - name: Build actual clause-history and recursion seam
         working-directory: v89-integrated/actual-src
         run: |
@@ -124,7 +84,7 @@ jobs:
           lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase 2>&1 | tee ../V89_ACTUAL_BUILD.log
           lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean 2>&1 | tee ../V89_RECURSION_BUILD.log
 
-      - name: Kernel-audit clause-history and recursive seam theorems
+      - name: Kernel-audit recursive seam
         working-directory: v89-integrated/actual-src
         run: |
           set -euo pipefail
@@ -151,7 +111,7 @@ jobs:
           sha256sum OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean | tee ../SATMachineClauseHistoryPhase.lean.sha256
           sha256sum OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean | tee ../SATMachineClauseRecursionPhase.lean.sha256
 
-      - name: Publish diagnostic receipt and recovered source snapshot
+      - name: Publish diagnostic receipt and source snapshot
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
@@ -159,7 +119,7 @@ jobs:
           set -u
           rm -rf v89-evidence/actual-v88
           mkdir -p v89-evidence/actual-v88/sources/OpenProblems/Complexity
-          for f in V89_CHUNK_DIAGNOSTIC.txt V89_CLOSURE_SHA256.txt V89_TOOLCHAIN_INSTALL.log V89_LEAN_VERSION.txt V89_LAKE_VERSION.txt V89_ACTUAL_BUILD.log V89_RECURSION_BUILD.log V89_ACTUAL_KERNEL.log SATMachineClauseHistoryPhase.lean.sha256 SATMachineClauseRecursionPhase.lean.sha256; do
+          for f in V89_CHUNK_DIAGNOSTIC.txt V89_CLOSURE_SHA256.txt V89_LEAN_VERSION.txt V89_LAKE_VERSION.txt V89_ACTUAL_BUILD.log V89_RECURSION_BUILD.log V89_ACTUAL_KERNEL.log SATMachineClauseHistoryPhase.lean.sha256 SATMachineClauseRecursionPhase.lean.sha256; do
             if [ -f "v89-integrated/$f" ]; then cp "v89-integrated/$f" v89-evidence/actual-v88/; fi
           done
           if [ -d v89-integrated/actual-src ]; then
@@ -195,7 +155,6 @@ jobs:
           path: |
             v89-integrated/V89_CHUNK_DIAGNOSTIC.txt
             v89-integrated/V89_CLOSURE_SHA256.txt
-            v89-integrated/V89_TOOLCHAIN_INSTALL.log
             v89-integrated/V89_LEAN_VERSION.txt
             v89-integrated/V89_LAKE_VERSION.txt
             v89-integrated/V89_ACTUAL_BUILD.log
