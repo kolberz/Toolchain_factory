@@ -130,12 +130,30 @@ theorem run_clauseHistoryFind_to_literalSign
     unfold clauseHistoryFindConfig spentMarkers outerLeft literalRight
     cases processedLiterals with
     | zero =>
-        simp [keepLeftScanConfig, List.append_assoc]
+        have hstep := step_clauseFind_clauseEnd_history formulaValue clauseValue
+          clauseLive
+          (List.replicate remainingLiterals clauseLive ++
+            formulaEnd :: formulaSpent :: List.replicate remainingClauses formulaLive ++
+              variableEnd :: List.replicate variableCount variableChecked ++ [blank])
+          (List.replicate processedWidth processed ++
+            ofBool sign :: literalRest.map ofBool ++ restLiteralPayload.map ofBool ++
+              restPayload.map ofBool ++ separator ::
+                List.replicate variableCount assignmentLengthChecked ++
+                  assignmentLengthEnd :: assignment.map assignmentSymbol ++ suffix.map ofBool)
+        simpa [keepLeftScanConfig, List.replicate_succ, List.append_assoc] using hstep
     | succ n =>
-        rw [List.replicate_succ]
-        simp only [List.cons_append]
-        rw [step_clauseFind_clauseEnd_history]
-        simp [keepLeftScanConfig, List.append_assoc]
+        have hstep := step_clauseFind_clauseEnd_history formulaValue clauseValue
+          clauseSpent
+          (List.replicate n clauseSpent ++
+            List.replicate (remainingLiterals + 1) clauseLive ++
+              formulaEnd :: formulaSpent :: List.replicate remainingClauses formulaLive ++
+                variableEnd :: List.replicate variableCount variableChecked ++ [blank])
+          (List.replicate processedWidth processed ++
+            ofBool sign :: literalRest.map ofBool ++ restLiteralPayload.map ofBool ++
+              restPayload.map ofBool ++ separator ::
+                List.replicate variableCount assignmentLengthChecked ++
+                  assignmentLengthEnd :: assignment.map assignmentSymbol ++ suffix.map ofBool)
+        simpa [keepLeftScanConfig, List.replicate_succ, List.append_assoc] using hstep
   have hspent := run_keepLeft_markers
     (clauseFind formulaValue clauseValue)
     (fun symbol => symbol = clauseSpent)
@@ -167,9 +185,11 @@ theorem run_clauseHistoryFind_to_literalSign
       configAt (clauseToCursor formulaValue clauseValue) blank
         (clauseSpent :: outerLeft)
         (cursorMarkers ++ literalRight) := by
-    rw [controlMachine_run_one, step_clauseFind_live]
-    unfold cursorMarkers spentMarkers
-    simp [List.append_assoc]
+    rw [controlMachine_run_one]
+    have hstep := step_clauseFind_live formulaValue clauseValue outerLeft
+      (spentMarkers.reverse ++ clauseEnd ::
+        List.replicate processedWidth processed ++ literalRight)
+    simpa [cursorMarkers, spentMarkers, List.append_assoc] using hstep
   have hcursorAll : ∀ marker ∈ cursorMarkers, clauseHistoryCursorMarker marker := by
     intro marker hm
     unfold cursorMarkers spentMarkers at hm
@@ -200,6 +220,7 @@ theorem run_clauseHistoryFind_to_literalSign
     unfold cursorMarkers spentMarkers outerLeft literalRight
     simp [List.reverse_append, List.replicate_succ, List.append_assoc,
       replicate_append_same_marker]
+    omega
   have hraw :
       satControl.run 1
         (configAt (clauseToCursor formulaValue clauseValue) blank
@@ -210,10 +231,15 @@ theorem run_clauseHistoryFind_to_literalSign
         remainingClauses processedLiterals remainingLiterals processedWidth
         (sign :: literalRest) restLiteralPayload restPayload assignment suffix := by
     rw [controlMachine_run_one]
-    unfold literalRight
-    rw [step_clauseToCursor_raw]
-    unfold clauseHistoryLiteralSignConfig outerLeft
-    simp [List.append_assoc]
+    have hstep := step_clauseToCursor_raw formulaValue clauseValue sign
+      (List.replicate processedWidth processed ++ clauseEnd ::
+        List.replicate (processedLiterals + 1) clauseSpent ++ outerLeft)
+      (literalRest.map ofBool ++ restLiteralPayload.map ofBool ++
+        restPayload.map ofBool ++ separator ::
+          List.replicate variableCount assignmentLengthChecked ++
+            assignmentLengthEnd :: assignment.map assignmentSymbol ++ suffix.map ofBool)
+    simpa [literalRight, clauseHistoryLiteralSignConfig, outerLeft,
+      List.append_assoc] using hstep
   rw [show processedWidth + 2 * processedLiterals + 4 =
       1 + (processedLiterals + (1 +
         ((processedLiterals + 1 + processedWidth) + 1))) by omega]
