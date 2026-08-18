@@ -29,7 +29,7 @@ jobs:
           use-github-cache: false
           use-mathlib-cache: false
 
-      - name: Reconstruct exact source and install patches
+      - name: Reconstruct exact source and generate history-valid module
         run: |
           set -euo pipefail
           rm -rf v89-integrated/actual-src
@@ -50,7 +50,8 @@ jobs:
           test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
           cp v89-integrated/patch/SATMachineClauseHistoryPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
           cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
-          cp v89-integrated/patch/SATMachineClauseLiteralHistoryValidPhase.lean v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
+          python v89-integrated/patch/build_history_valid.py v89-integrated/actual-src
+          sha256sum v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseLiteralHistoryValidPhase.lean
 
       - name: Compile history tower and valid context lift
         working-directory: v89-integrated/actual-src
