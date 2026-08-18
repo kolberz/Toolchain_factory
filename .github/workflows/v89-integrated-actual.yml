@@ -7,6 +7,12 @@ on:
     paths:
       - 'v89-integrated/**'
       - '.github/workflows/v89-integrated-actual.yml'
+  pull_request:
+    branches:
+      - research/v89-clause-history
+    paths:
+      - 'v89-integrated/**'
+      - '.github/workflows/v89-integrated-actual.yml'
   workflow_dispatch:
 
 permissions:
@@ -112,7 +118,7 @@ jobs:
           sha256sum OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean | tee ../SATMachineClauseRecursionPhase.lean.sha256
 
       - name: Publish diagnostic receipt and source snapshot
-        if: always()
+        if: always() && github.event_name == 'push'
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
