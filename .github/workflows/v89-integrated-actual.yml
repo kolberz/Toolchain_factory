@@ -100,33 +100,45 @@ jobs:
           lean --version | tee -a ../V89_ACTUAL_KERNEL.log
           lake --version | tee -a ../V89_ACTUAL_KERNEL.log
 
-      - name: Publish recovered source and evidence snapshot
-        if: success()
+      - name: Publish diagnostic receipt and recovered source snapshot
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
-          set -euo pipefail
+          set -u
           rm -rf v89-evidence/actual-v88
           mkdir -p v89-evidence/actual-v88/sources/OpenProblems/Complexity
-          cp v89-integrated/V89_CHUNK_DIAGNOSTIC.txt v89-evidence/actual-v88/
-          cp v89-integrated/V89_CLOSURE_SHA256.txt v89-evidence/actual-v88/
-          cp v89-integrated/V89_ACTUAL_BUILD.log v89-evidence/actual-v88/
-          cp v89-integrated/V89_ACTUAL_KERNEL.log v89-evidence/actual-v88/
-          cp v89-integrated/SATMachineClauseHistoryPhase.lean.sha256 v89-evidence/actual-v88/
-          cp v89-integrated/actual-src/lean-toolchain v89-evidence/actual-v88/
-          cp v89-integrated/actual-src/lakefile.toml v89-evidence/actual-v88/
-          cp v89-integrated/actual-src/lake-manifest.json v89-evidence/actual-v88/
-          find v89-integrated/actual-src/OpenProblems/Complexity -maxdepth 1 -type f \( -name 'SATMachine*.lean' -o -name 'EncodedSAT*.lean' \) -print -exec cp {} v89-evidence/actual-v88/sources/OpenProblems/Complexity/ \;
+          for f in \
+            V89_CHUNK_DIAGNOSTIC.txt \
+            V89_CLOSURE_SHA256.txt \
+            V89_ACTUAL_BUILD.log \
+            V89_ACTUAL_KERNEL.log \
+            SATMachineClauseHistoryPhase.lean.sha256
+          do
+            if [ -f "v89-integrated/$f" ]; then cp "v89-integrated/$f" v89-evidence/actual-v88/; fi
+          done
+          if [ -d v89-integrated/actual-src ]; then
+            for f in lean-toolchain lakefile.toml lake-manifest.json; do
+              if [ -f "v89-integrated/actual-src/$f" ]; then cp "v89-integrated/actual-src/$f" v89-evidence/actual-v88/; fi
+            done
+            if [ -d v89-integrated/actual-src/OpenProblems/Complexity ]; then
+              find v89-integrated/actual-src/OpenProblems/Complexity -maxdepth 1 -type f \( -name 'SATMachine*.lean' -o -name 'EncodedSAT*.lean' \) -print -exec cp {} v89-evidence/actual-v88/sources/OpenProblems/Complexity/ \;
+            fi
+          fi
           {
+            echo "job_status=$JOB_STATUS"
             echo "head_before_evidence=$(git rev-parse HEAD)"
-            echo "source_file_count=$(find v89-integrated/actual-src -type f | wc -l)"
-            echo "captured_complexity_sources=$(find v89-evidence/actual-v88/sources/OpenProblems/Complexity -type f | wc -l)"
+            echo "source_file_count=$(find v89-integrated/actual-src -type f 2>/dev/null | wc -l)"
+            echo "captured_complexity_sources=$(find v89-evidence/actual-v88/sources/OpenProblems/Complexity -type f 2>/dev/null | wc -l)"
+            if [ -f v89-integrated/V89_CLOSURE_SHA256.txt ]; then cat v89-integrated/V89_CLOSURE_SHA256.txt; fi
           } > v89-evidence/actual-v88/REPORT.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add v89-evidence/actual-v88
           if git diff --cached --quiet; then
-            echo 'evidence snapshot unchanged'
+            echo 'diagnostic receipt unchanged'
           else
-            git commit -m 'v89 evidence: publish actual-v88 kernel snapshot'
+            git commit -m "v89 evidence: actual-v88 gate $JOB_STATUS"
             git push origin HEAD:research/v89-clause-history
           fi
 
