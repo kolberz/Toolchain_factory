@@ -56,6 +56,8 @@ jobs:
           test "$(find v89-integrated/actual-src -type f | wc -l)" -eq 82
           test "$(cat v89-integrated/actual-src/lean-toolchain)" = 'leanprover/lean4:v4.33.0-rc1'
           grep -F '"packages": []' v89-integrated/actual-src/lake-manifest.json
+          cp v89-integrated/patch/SATMachineClauseRecursionPhase.lean \
+            v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
 
       - name: Install exact Lean toolchain with elan
         run: |
@@ -71,27 +73,39 @@ jobs:
           lean --version | tee ../V89_LEAN_VERSION.txt
           lake --version | tee ../V89_LAKE_VERSION.txt
 
-      - name: Build actual v88 transitive closure
+      - name: Build actual clause-history and recursion seam
         working-directory: v89-integrated/actual-src
         run: |
           set -euo pipefail
           lake build OpenProblems.Complexity.SATMachineClauseHistoryPhase 2>&1 | tee ../V89_ACTUAL_BUILD.log
+          lake env lean OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean 2>&1 | tee ../V89_RECURSION_BUILD.log
 
-      - name: Kernel-audit actual clause-history theorem
+      - name: Kernel-audit clause-history and recursive seam theorems
         working-directory: v89-integrated/actual-src
         run: |
           set -euo pipefail
           cat > V89ActualGate.lean <<'LEAN'
-          import OpenProblems.Complexity.SATMachineClauseHistoryPhase
+          import OpenProblems.Complexity.SATMachineClauseRecursionPhase
           #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_clauseHistoryFind_to_literalSign
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.canonicalCNFLiteralEvaluatedConfig_eq_clauseHistoryFindConfig_next
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_canonicalCNFLiteralEvaluated_to_nextLiteralSign
+          #print axioms OpenProblems.Complexity.SATMachineCertificatePhase.run_cnfLiteral_total_then_nextSelector_trailingBlankRel
           LEAN
           lake env lean V89ActualGate.lean 2>&1 | tee ../V89_ACTUAL_KERNEL.log
-          grep -F 'run_clauseHistoryFind_to_literalSign' ../V89_ACTUAL_KERNEL.log
+          for theorem in \
+            run_clauseHistoryFind_to_literalSign \
+            canonicalCNFLiteralEvaluatedConfig_eq_clauseHistoryFindConfig_next \
+            run_canonicalCNFLiteralEvaluated_to_nextLiteralSign \
+            run_cnfLiteral_total_then_nextSelector_trailingBlankRel
+          do
+            grep -F "$theorem" ../V89_ACTUAL_KERNEL.log
+          done
           if grep -F 'sorryAx' ../V89_ACTUAL_KERNEL.log; then
-            echo 'unexpected sorryAx in actual v88 theorem closure' >&2
+            echo 'unexpected sorryAx in recursive seam theorem closure' >&2
             exit 1
           fi
           sha256sum OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean | tee ../SATMachineClauseHistoryPhase.lean.sha256
+          sha256sum OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean | tee ../SATMachineClauseRecursionPhase.lean.sha256
 
       - name: Publish diagnostic receipt and recovered source snapshot
         if: always()
@@ -101,7 +115,7 @@ jobs:
           set -u
           rm -rf v89-evidence/actual-v88
           mkdir -p v89-evidence/actual-v88/sources/OpenProblems/Complexity
-          for f in V89_CHUNK_DIAGNOSTIC.txt V89_CLOSURE_SHA256.txt V89_TOOLCHAIN_INSTALL.log V89_LEAN_VERSION.txt V89_LAKE_VERSION.txt V89_ACTUAL_BUILD.log V89_ACTUAL_KERNEL.log SATMachineClauseHistoryPhase.lean.sha256; do
+          for f in V89_CHUNK_DIAGNOSTIC.txt V89_CLOSURE_SHA256.txt V89_TOOLCHAIN_INSTALL.log V89_LEAN_VERSION.txt V89_LAKE_VERSION.txt V89_ACTUAL_BUILD.log V89_RECURSION_BUILD.log V89_ACTUAL_KERNEL.log SATMachineClauseHistoryPhase.lean.sha256 SATMachineClauseRecursionPhase.lean.sha256; do
             if [ -f "v89-integrated/$f" ]; then cp "v89-integrated/$f" v89-evidence/actual-v88/; fi
           done
           if [ -d v89-integrated/actual-src ]; then
@@ -125,7 +139,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'diagnostic receipt unchanged'
           else
-            git commit -m "v89 evidence: actual-v88 gate $JOB_STATUS"
+            git commit -m "v89 evidence: recursive seam gate $JOB_STATUS"
             git push origin HEAD:research/v89-clause-history
           fi
 
@@ -141,6 +155,9 @@ jobs:
             v89-integrated/V89_LEAN_VERSION.txt
             v89-integrated/V89_LAKE_VERSION.txt
             v89-integrated/V89_ACTUAL_BUILD.log
+            v89-integrated/V89_RECURSION_BUILD.log
             v89-integrated/V89_ACTUAL_KERNEL.log
             v89-integrated/SATMachineClauseHistoryPhase.lean.sha256
+            v89-integrated/SATMachineClauseRecursionPhase.lean.sha256
             v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseHistoryPhase.lean
+            v89-integrated/actual-src/OpenProblems/Complexity/SATMachineClauseRecursionPhase.lean
