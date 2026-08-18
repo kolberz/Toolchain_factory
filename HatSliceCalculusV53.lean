@@ -104,7 +104,7 @@ theorem sum_insertion_pairs_eq_slice_sum
     refine ⟨?_, Finset.mem_insert_self _ _⟩
     rw [deletionSlice, Finset.mem_powersetCard] at hS ⊢
     refine ⟨Finset.insert_subset hvU hS.1, ?_⟩
-    rw [Finset.card_insert_of_not_mem hvS, hS.2]
+    rw [Finset.card_insert_of_notMem hvS, hS.2]
 
   have h_mem_del : ∀ q ∈ succPairs U j,
       (q.1 \ {q.2}, q.2) ∈ insertionPairs U j := by
@@ -116,10 +116,12 @@ theorem sum_insertion_pairs_eq_slice_sum
     rw [mem_insertionPairs]
     refine ⟨?_, ?_⟩
     · rw [deletionSlice, Finset.mem_powersetCard]
-      refine ⟨Finset.Subset.trans (Finset.sdiff_subset q.1 {q.2}) hTU, ?_⟩
-      rw [Finset.card_sdiff_of_subset (Finset.singleton_subset_iff.mpr hvT),
-          Finset.card_singleton, hcardT]
-      omega
+      refine ⟨?_, ?_⟩
+      · intro x hx
+        exact hTU (Finset.mem_sdiff.mp hx).1
+      · rw [Finset.card_sdiff_of_subset (Finset.singleton_subset_iff.mpr hvT),
+            Finset.card_singleton, hcardT]
+        omega
     · rw [Finset.mem_sdiff]
       exact ⟨hTU hvT, by simp⟩
 
