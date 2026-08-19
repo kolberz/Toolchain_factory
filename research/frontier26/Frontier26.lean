@@ -101,8 +101,7 @@ theorem portfolioMaterializationWork_exact (I : SubsetSumFW) (mods : List Nat) :
   induction mods with
   | nil => simp [portfolioMaterializationWork]
   | cons m ms ih =>
-      simp [portfolioMaterializationWork, WTCF25.linearRunWork_exact, ih,
-        Nat.mul_add, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc]
+      simp [portfolioMaterializationWork, WTCF25.linearRunWork_exact, ih, Nat.mul_add]
 
 /-- Explicit separation of the three cost dimensions certified in Frontier 26. -/
 structure CostLedger where
@@ -157,13 +156,29 @@ theorem mem_adaptiveOrder_iff (I : SubsetSumFW) (cutoff : Nat)
   | nil => simp [adaptiveOrder]
   | cons a as ih =>
       simp only [adaptiveOrder]
-      split <;> simp [ih, or_comm, or_left_comm, or_assoc]
+      split <;> simp [ih, or_comm]
+
+/-- Adaptive ordering preserves the modulus sum, hence the declared total linear-DP work. -/
+theorem adaptiveOrder_sum (I : SubsetSumFW) (cutoff : Nat) (mods : List Nat) :
+    (adaptiveOrder I cutoff mods).sum = mods.sum := by
+  induction mods with
+  | nil => simp [adaptiveOrder]
+  | cons m ms ih =>
+      simp only [adaptiveOrder]
+      split <;> simp [ih, Nat.add_comm]
 
 /-- Search-attempt count is unchanged by adaptive ordering. -/
 theorem adaptive_searchWork_preserved (I : SubsetSumFW) (cutoff : Nat)
     (mods : List Nat) :
     modulusSearchWork (adaptiveOrder I cutoff mods) = modulusSearchWork mods := by
   simp [modulusSearchWork, adaptiveOrder_length]
+
+/-- The adaptive reorder also preserves exact declared materialization work. -/
+theorem adaptive_materializationWork_preserved (I : SubsetSumFW) (cutoff : Nat)
+    (mods : List Nat) :
+    portfolioMaterializationWork I (adaptiveOrder I cutoff mods) =
+      portfolioMaterializationWork I mods := by
+  rw [portfolioMaterializationWork_exact, portfolioMaterializationWork_exact, adaptiveOrder_sum]
 
 /-- A successful `tryCosted` result occurs in the collected-certificate list whenever its
     modulus occurs in the searched list. -/
@@ -192,7 +207,7 @@ def chooseAdaptiveCosted (I : SubsetSumFW) (cutoff : Nat) (mods : List Nat) :
 /-- Any adaptive residue certificate remains a sound exact source-UNSAT proof. -/
 theorem chooseAdaptiveCosted_sound (I : SubsetSumFW) (cutoff : Nat) (mods : List Nat) :
     match chooseAdaptiveCosted I cutoff mods with
-    | some c => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
+    | some _ => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
     | none => True := by
   cases h : chooseAdaptiveCosted I cutoff mods with
   | none => trivial
@@ -277,8 +292,8 @@ def chooseAdaptivePortfolio (I : SubsetSumFW) (cutoff : Nat) : WTCF25.PortfolioR
 /-- Every proof-producing branch of the adaptive three-way compiler remains source-sound. -/
 theorem adaptivePortfolio_certificate_sound (I : SubsetSumFW) (cutoff : Nat) :
     match chooseAdaptivePortfolio I cutoff with
-    | .gcd c => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
-    | .residue c => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
+    | .gcd _ => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
+    | .residue _ => ¬ ∃ base : Assignment, naturalSubsetAccepts I base
     | .lrat => True := by
   unfold chooseAdaptivePortfolio
   cases hg : WTCF22.tryGCD I with
@@ -318,7 +333,9 @@ theorem residueFallback_target_unsat_retained :
 #print axioms cost_eq_certificateWords
 #print axioms portfolioMaterializationWork_exact
 #print axioms mem_adaptiveOrder_iff
+#print axioms adaptiveOrder_sum
 #print axioms adaptive_searchWork_preserved
+#print axioms adaptive_materializationWork_preserved
 #print axioms chooseAdaptiveCosted_sound
 #print axioms chooseAdaptiveCosted_minimal_original
 #print axioms chooseAdaptiveCosted_emitted_minimal
