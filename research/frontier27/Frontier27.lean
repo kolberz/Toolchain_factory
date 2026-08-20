@@ -33,8 +33,10 @@ theorem deserialize_serialize_bounded (xs : List Nat)
       have hxs : ∀ n ∈ xs, n < 256 := by
         intro n hn
         exact hbound n (by simp [hn])
-      simp [serializeWords, deserializeWords, byteOfNat, natOfByte,
-        Nat.mod_eq_of_lt hx, ih hxs]
+      change natOfByte (byteOfNat x) :: deserializeWords (serializeWords xs) = x :: xs
+      have hxbyte : natOfByte (byteOfNat x) = x := by
+        simp [natOfByte, byteOfNat, Nat.mod_eq_of_lt hx]
+      rw [hxbyte, ih hxs]
 
 private theorem bitmapWords_bounded (m : Nat) (s : WTCF25.ResidueState m) :
     ∀ n ∈ WTCF26.bitmapWords m s, n < 256 := by
@@ -105,7 +107,8 @@ theorem tryCosted_modulus {I : SubsetSumFW} {m : Nat}
     (h : WTCF25.tryCosted I m = some c) : c.modulus = m := by
   unfold WTCF25.tryCosted at h
   split at h <;> simp_all
-  split at h <;> simp_all
+  rcases h with ⟨ht, hEq⟩
+  exact (congrArg (fun x : WTCF25.CostedWTCObstruction I => x.modulus) hEq).symm
 
 theorem safe_prune_tryCosted {I : SubsetSumFW} {m : Nat}
     (best c : WTCF25.CostedWTCObstruction I)
@@ -176,8 +179,8 @@ theorem exhaustive_byte_min_exact :
   decide
 
 theorem branch_bound_exhaustive_equiv :
-    (pruneTrace.best.modulus, certificateBytes pruneTrace.best) =
-      ((WTCF25.chooseCosted pruneDemo pruneAllMods).get (by decide)).let
+    some (pruneTrace.best.modulus, certificateBytes pruneTrace.best) =
+      (WTCF25.chooseCosted pruneDemo pruneAllMods).map
         (fun c => (c.modulus, certificateBytes c)) := by
   decide
 
