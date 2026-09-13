@@ -44,8 +44,11 @@ record_gate() {
   local actual='FAIL'
   [[ $exit_code -eq 0 ]] && actual='PASS'
   jq -nc \
-    --arg id "$id" --arg command "$command" --arg expectedOutcome "$expected" \
-    --argjson actualExitCode "$exit_code" --arg logFile "logs/$id.log" \
+    --arg id "$id" \
+    --arg command "$command" \
+    --arg expectedOutcome "$expected" \
+    --argjson actualExitCode "$exit_code" \
+    --arg logFile "logs/$id.log" \
     --arg logSha256 "$(sha256sum "$log_file" | cut -d' ' -f1)" \
     '{id:$id,command:$command,expectedOutcome:$expectedOutcome,actualExitCode:$actualExitCode,logFile:$logFile,logSha256:$logSha256}' >> "$gates_file"
 
@@ -68,6 +71,8 @@ tar --use-compress-program=unzstd -xf "$work_root/$RELEASE_ARTIFACT" -C "$work_r
 lean_home="$(find "$work_root/lean-release" -mindepth 1 -maxdepth 1 -type d -name 'lean-*' -print -quit)"
 [[ -n "$lean_home" ]]
 export PATH="$lean_home/bin:$PATH"
+# Prevent consumers of the build-time environment from having to infer the
+# installation root from the running executable.
 export LEAN_SYSROOT="$lean_home"
 
 record_gate 'lean-version' 'PASS' "lean --version"
@@ -108,8 +113,33 @@ smoke_exit="$(jq -s -r '.[] | select(.id == "mathlib-smoke") | .actualExitCode' 
   exit 1
 }
 
-# Capture the exact search path from the known-good Lake environment. Replace
-# ephemeral build roots with a stable token that the packaged wrapper resolves.
+# Optionally stage one standalone proof candidate from this repository into the
+# packaged Mathlib root. This is deliberately opt-in so the canonical factory
+# remains profile-driven when no consumer proof is selected.
+portable_proof_file="${PORTABLE_PROOF_FILE:-MathlibSmoke.lean}"
+if [[ "$portable_proof_file" = /* || "$portable_proof_file" == *".."* ]]; then
+  echo 'PORTABLE_PROOF_FILE must be a relative path inside packaged Mathlib' >&2
+  exit 1
+fi
+if [[ -n "${PORTABLE_PROOF_SOURCE:-}" ]]; then
+  if [[ "$PORTABLE_PROOF_SOURCE" = /* || "$PORTABLE_PROOF_SOURCE" == *".."* ]]; then
+    echo 'PORTABLE_PROOF_SOURCE must be a relative path inside the repository' >&2
+    exit 1
+  fi
+  [[ -f "$repo_root/$PORTABLE_PROOF_SOURCE" ]] || {
+    echo "portable proof source does not exist: $PORTABLE_PROOF_SOURCE" >&2
+    exit 1
+  }
+  mkdir -p "$(dirname "$mathlib_dir/$portable_proof_file")"
+  cp "$repo_root/$PORTABLE_PROOF_SOURCE" "$mathlib_dir/$portable_proof_file"
+fi
+[[ -f "$mathlib_dir/$portable_proof_file" ]] || {
+  echo "portable proof file is not available in Mathlib: $portable_proof_file" >&2
+  exit 1
+}
+
+# Capture the exact known-good Lake search path while the build environment is
+# working, then replace ephemeral build roots with a stable bundle token.
 canonical_lean_path="$(lake env bash -c 'printf "%s" "${LEAN_PATH:-}"')"
 [[ -n "$canonical_lean_path" ]] || { echo 'lake env produced an empty LEAN_PATH' >&2; exit 1; }
 portable_lean_path="$(python3 - "$canonical_lean_path" "$lean_home" "$mathlib_dir" "$work_root" <<'PY'
@@ -118,20 +148,28 @@ value, lean_home, mathlib_dir, work_root = sys.argv[1:]
 value = value.replace(lean_home, "__PORTABLE_ROOT__/lean")
 value = value.replace(mathlib_dir, "__PORTABLE_ROOT__/mathlib")
 if work_root in value:
-    raise SystemExit("portable LEAN_PATH still contains build-machine work_root")
+    raise SystemExit("portable LEAN_PATH still contains the build work root")
 print(value, end="")
 PY
 )"
+[[ "$portable_lean_path" == *"__PORTABLE_ROOT__"* ]] || {
+  echo 'portable LEAN_PATH did not contain any relocatable bundle roots' >&2
+  exit 1
+}
 printf '%s\n' "$portable_lean_path" > "$out_dir/portable-lean-path.txt"
 
 bash "$repo_root/scripts/canonicalize-dependency-git.sh" "$mathlib_dir" | tee "$logs_dir/dependency-git-canonicalization.log"
 
-echo "Packaging Lean, Lake, Mathlib sources, dependencies, compiled cache, and portable runtime wrapper."
+echo "Packaging Lean, Lake, Mathlib sources, dependencies, compiled cache, and explicit portable runtime environment."
 portable_root="$package_dir/portable-lean-toolchain"
 mkdir -p "$portable_root"
 cp -a "$lean_home" "$portable_root/lean"
+# Keep the canonicalized top-level Mathlib Git metadata as well as every locked
+# dependency's metadata. This lets an offline consumer mount packaged Mathlib as
+# a dependency of another exact-pin Lake project without Lake attempting a clone.
 rsync -a "$mathlib_dir/" "$portable_root/mathlib/"
 printf '%s\n' "$MATHLIB_COMMIT" > "$portable_root/MATHLIB_COMMIT"
+printf '%s\n' "$portable_lean_path" > "$portable_root/PORTABLE_LEAN_PATH"
 cp "$repo_root/scripts/verify-and-reconstruct.sh" "$portable_root/verify-and-reconstruct.sh"
 chmod +x "$portable_root/verify-and-reconstruct.sh"
 
@@ -142,22 +180,31 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 LEAN_BIN="$ROOT/lean/bin/lean"
 LAKE_BIN="$ROOT/lean/bin/lake"
+PATH_FILE="$ROOT/PORTABLE_LEAN_PATH"
 
 [[ -x "$LEAN_BIN" ]] || { echo "missing Lean executable: $LEAN_BIN" >&2; exit 69; }
 [[ -x "$LAKE_BIN" ]] || { echo "missing Lake executable: $LAKE_BIN" >&2; exit 69; }
+[[ -f "$PATH_FILE" ]] || { echo "missing portable Lean path file: $PATH_FILE" >&2; exit 69; }
+
+portable_path="$(cat "$PATH_FILE")"
+[[ "$portable_path" == *"__PORTABLE_ROOT__"* ]] || {
+  echo 'portable Lean path is missing its relocatable root token' >&2
+  exit 65
+}
 
 export LEAN_SYSROOT="$ROOT/lean"
+export LEAN_PATH="${portable_path//__PORTABLE_ROOT__/$ROOT}"
+export LEAN="$LEAN_BIN"
+export LAKE="$LAKE_BIN"
 export PATH="$ROOT/lean/bin:${PATH:-}"
 export LD_LIBRARY_PATH="$ROOT/lean/lib/lean:$ROOT/lean/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-PORTABLE_LEAN_PATH='__PORTABLE_LEAN_PATH_VALUE__'
-export LEAN_PATH="${PORTABLE_LEAN_PATH//__PORTABLE_ROOT__/$ROOT}"
 
 if [[ $# -eq 0 ]]; then
   cat <<EOF
 LEAN_SYSROOT=$LEAN_SYSROOT
 LEAN_PATH=$LEAN_PATH
-LEAN=$LEAN_BIN
-LAKE=$LAKE_BIN
+LEAN=$LEAN
+LAKE=$LAKE
 EOF
   exit 0
 fi
@@ -184,38 +231,17 @@ case "$1" in
     ;;
 esac
 PORTABLE_ENV
-python3 - "$portable_root/portable-lean-env" "$portable_lean_path" <<'PY'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1])
-value = sys.argv[2]
-text = p.read_text()
-needle = "__PORTABLE_LEAN_PATH_VALUE__"
-if needle not in text:
-    raise SystemExit("portable wrapper placeholder missing")
-if "'" in value:
-    raise SystemExit("portable LEAN_PATH unexpectedly contains a single quote")
-p.write_text(text.replace(needle, value))
-PY
 chmod +x "$portable_root/portable-lean-env"
 
-# Prove the bundle can execute without relying on inherited Lean/Lake discovery.
-# PATH contains only ordinary system tools; the wrapper uses absolute binaries.
-record_gate 'portable-lean-version' 'PASS' "env -u LEAN_SYSROOT -u LEAN_PATH PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean --version"
-record_gate 'portable-mathlib-smoke' 'PASS' "env -u LEAN_SYSROOT -u LEAN_PATH PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
-
-# By default this replays the smoke theorem. A build can select another proof
-# already present under Mathlib by setting PORTABLE_PROOF_FILE before execution.
-portable_proof_file="${PORTABLE_PROOF_FILE:-MathlibSmoke.lean}"
-if [[ "$portable_proof_file" = /* || "$portable_proof_file" == *".."* ]]; then
-  echo 'PORTABLE_PROOF_FILE must be a relative path inside packaged Mathlib' >&2
-  exit 1
-fi
-[[ -f "$portable_root/mathlib/$portable_proof_file" ]] || {
-  echo "portable proof file is not packaged: $portable_proof_file" >&2
-  exit 1
-}
-record_gate 'portable-proof-replay' 'PASS' "env -u LEAN_SYSROOT -u LEAN_PATH PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean '$portable_proof_file'"
+# First-class portable runtime gates. Inherited Lean path hints are removed and
+# only ordinary system tools remain on PATH before the wrapper initializes its
+# explicit sysroot/search-path environment.
+record_gate 'portable-lean-version' 'PASS' \
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean --version"
+record_gate 'portable-mathlib-smoke' 'PASS' \
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
+record_gate 'portable-proof-replay' 'PASS' \
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean '$portable_proof_file'"
 
 (
   cd "$portable_root"
@@ -258,12 +284,16 @@ reassembled_sha256="$(find "$parts_dir" -maxdepth 1 -type f -name 'portable-lean
 part_set_sha256="$(sha256sum "$parts_dir/part-sha256sums.txt" | cut -d' ' -f1)"
 
 jq -n \
-  --arg profileId "$profile_id" --arg leanVersion "$LEAN_VERSION" --arg leanToolchain "$LEAN_TOOLCHAIN" \
-  --arg mathlibCommit "$MATHLIB_COMMIT" --arg archiveSha256 "$archive_sha256" \
-  --arg workspaceTreeSha256 "$workspace_tree_sha256" --arg partSetSha256 "$part_set_sha256" \
-  --arg proofReplayFile "$portable_proof_file" \
-  --argjson archiveBytes "$archive_bytes" --slurpfile parts "$out_dir/parts.ndjson" \
-  '{schemaVersion:"1.2.0",anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},portableRuntime:{wrapper:"portable-lean-env",explicitLeanSysroot:true,explicitLeanPath:true,proofReplayFile:$proofReplayFile},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
+  --arg profileId "$profile_id" \
+  --arg leanVersion "$LEAN_VERSION" \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" \
+  --arg mathlibCommit "$MATHLIB_COMMIT" \
+  --arg archiveSha256 "$archive_sha256" \
+  --arg workspaceTreeSha256 "$workspace_tree_sha256" \
+  --arg partSetSha256 "$part_set_sha256" \
+  --argjson archiveBytes "$archive_bytes" \
+  --slurpfile parts "$out_dir/parts.ndjson" \
+  '{schemaVersion:"1.1.0",anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibCommit:$mathlibCommit},transport:{archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,parts:$parts}}' \
   > "$out_dir/reproducibility-fingerprint.json"
 
 generated_at="$(date --utc +'%Y-%m-%dT%H:%M:%SZ')"
@@ -273,13 +303,17 @@ run_id="${GITHUB_RUN_ID:-local}"
 
 jq -n \
   --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
-  --arg profileId "$profile_id" --arg leanVersion "$LEAN_VERSION" --arg leanToolchain "$LEAN_TOOLCHAIN" \
-  --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
+  --arg profileId "$profile_id" --arg leanVersion "$LEAN_VERSION" \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
   --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
   --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
-  --arg partSetSha256 "$part_set_sha256" --arg proofReplayFile "$portable_proof_file" --slurpfile parts "$out_dir/parts.ndjson" \
-  '{schemaVersion:"3.2.0",generatedAt:$generatedAt,source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},portableRuntime:{wrapper:"portable-lean-env",explicitLeanSysroot:true,explicitLeanPath:true,proofReplayFile:$proofReplayFile},transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts}}' \
-  > "$out_dir/toolchain-manifest.json"
+  --arg partSetSha256 "$part_set_sha256" --slurpfile parts "$out_dir/parts.ndjson" \
+  '{
+    schemaVersion:"3.1.0", generatedAt:$generatedAt,
+    source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},
+    anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
+    transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts}
+  }' > "$out_dir/toolchain-manifest.json"
 sha256sum "$out_dir/toolchain-manifest.json" > "$out_dir/toolchain-manifest.json.sha256"
 cp "$out_dir/toolchain-manifest.json" "$out_dir/toolchain-manifest.json.sha256" "$parts_dir/"
 
@@ -298,15 +332,90 @@ for number in 1 2; do
 
   set +e
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'git config --global --add safe.directory "*"; env -u LEAN_SYSROOT -u LEAN_PATH PATH=/usr/bin:/bin /portable/portable-lean-env lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin /portable/portable-lean-env lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
   offline_build_exit=$?
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'env -u LEAN_SYSROOT -u LEAN_PATH PATH=/usr/bin:/bin /portable/portable-lean-env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-mathlib-smoke.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin /portable/portable-lean-env lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
   offline_smoke_exit=$?
   set -e
-  [[ $offline_build_exit -eq 0 && $offline_smoke_exit -eq 0 ]] || { echo "offline portable replay $number failed" >&2; exit 1; }
-  jq -nc --argjson run "$number" --argjson lakeBuildExit "$offline_build_exit" --argjson mathlibSmokeExit "$offline_smoke_exit" \
-    '{run:$run,lakeBuildExit:$lakeBuildExit,mathlibSmokeExit:$mathlibSmokeExit,portableRuntime:true}' >> "$out_dir/offline.ndjson"
+  cat "$logs_dir/offline-$number-lake-build.log"
+  cat "$logs_dir/offline-$number-smoke.log"
+  [[ $offline_build_exit -eq 0 && $offline_smoke_exit -eq 0 ]] || { echo "offline-$number execution failed" >&2; exit 1; }
+
+  cat "$logs_dir/offline-$number-reconstruct.log" "$logs_dir/offline-$number-lake-build.log" "$logs_dir/offline-$number-smoke.log" > "$logs_dir/offline-$number-complete.log"
+  jq -nc \
+    --arg id "offline-$number" \
+    --arg treeSha256 "$tree_sha256" \
+    --arg logSha256 "$(sha256sum "$logs_dir/offline-$number-complete.log" | cut -d' ' -f1)" \
+    --argjson lakeBuildExitCode "$offline_build_exit" \
+    --argjson smokeExitCode "$offline_smoke_exit" \
+    '{id:$id,networkMode:"none",treeSha256:$treeSha256,lakeBuildExitCode:$lakeBuildExitCode,smokeExitCode:$smokeExitCode,logSha256:$logSha256}' >> "$out_dir/offline.ndjson"
 done
 
-echo "portable toolchain build and replay gates completed successfully"
+jq -n \
+  --arg generatedAt "$generated_at" --arg repository "$repository" --arg commit "$commit" --arg runId "$run_id" \
+  --arg profileId "$profile_id" \
+  --arg leanVersion "$LEAN_VERSION" \
+  --arg leanToolchain "$LEAN_TOOLCHAIN" --arg mathlibTag "$MATHLIB_TAG" --arg mathlibCommit "$MATHLIB_COMMIT" --arg mathlibLakeManifestSha256 "$MATHLIB_LAKE_MANIFEST_SHA256" \
+  --arg releaseArtifact "$RELEASE_ARTIFACT" --arg releaseTarballSha256 "$RELEASE_SHA256" --argjson releaseTarballBytes "$RELEASE_BYTES" \
+  --arg archiveFilename "$(basename "$archive")" --arg archiveSha256 "$archive_sha256" --arg workspaceTreeSha256 "$workspace_tree_sha256" --argjson archiveBytes "$archive_bytes" \
+  --arg partSetSha256 "$part_set_sha256" \
+  --arg leanExecutableSha256 "$(sha256sum "$portable_root/lean/bin/lean" | cut -d' ' -f1)" \
+  --arg lakeExecutableSha256 "$(sha256sum "$portable_root/lean/bin/lake" | cut -d' ' -f1)" \
+  --slurpfile parts "$out_dir/parts.ndjson" --slurpfile gates "$gates_file" --slurpfile offline "$out_dir/offline.ndjson" \
+  '{
+    schemaVersion:"3.1.0", generatedAt:$generatedAt,
+    source:{repository:$repository,commit:$commit,workflow:"build-portable-toolchain",runId:$runId,runnerImage:"ubuntu-24.04",builderInstance:(env.BUILDER_INSTANCE // "local")},
+    anchors:{profileId:$profileId,leanVersion:$leanVersion,leanToolchain:$leanToolchain,mathlibTag:$mathlibTag,mathlibCommit:$mathlibCommit,mathlibLakeManifestSha256:$mathlibLakeManifestSha256,releaseArtifact:$releaseArtifact,releaseTarballSha256:$releaseTarballSha256,releaseTarballBytes:$releaseTarballBytes,architecture:"linux-x86_64"},
+    transport:{archiveFilename:$archiveFilename,archiveSha256:$archiveSha256,archiveBytes:$archiveBytes,workspaceTreeSha256:$workspaceTreeSha256,partSetSha256:$partSetSha256,verificationExitCode:0,parts:$parts},
+    execution:{leanExecutableSha256:$leanExecutableSha256,lakeExecutableSha256:$lakeExecutableSha256,gates:$gates},
+    offlineReconstructions:$offline
+  }' > "$out_dir/certification-evidence.json"
+
+sha256sum "$out_dir/certification-evidence.json" > "$out_dir/certification-evidence.json.sha256"
+jq '{schemaVersion,generatedAt,source,anchors,transport}' "$out_dir/certification-evidence.json" > "$out_dir/evidence-manifest.json"
+cmp --silent "$out_dir/toolchain-manifest.json" "$out_dir/evidence-manifest.json" || { echo 'final evidence differs from the reconstruction manifest' >&2; exit 1; }
+rm -f -- "$out_dir/evidence-manifest.json"
+
+# The public reconstruction helper must reject stale or injected part files,
+# even when every checksum-listed part remains valid.
+printf -v unlisted_suffix '%03d' "${#generated_parts[@]}"
+unlisted_part="$parts_dir/portable-lean-toolchain.tar.zst.part-$unlisted_suffix"
+printf 'deliberately unlisted transport bytes\n' > "$unlisted_part"
+set +e
+bash "$repo_root/scripts/verify-and-reconstruct.sh" \
+  "$parts_dir" "$work_root/unlisted-part-negative-control" \
+  > "$logs_dir/unlisted-part-negative-control.log" 2>&1
+unlisted_part_exit=$?
+set -e
+rm -f -- "$unlisted_part"
+[[ $unlisted_part_exit -ne 0 ]] || { echo 'reconstruction helper accepted an unlisted part' >&2; exit 1; }
+grep -F 'discovered part set differs from checksum inventory' "$logs_dir/unlisted-part-negative-control.log"
+
+{
+  echo 'BUILDER CERTIFICATION COMPLETE — CROSS-BUILDER COMPARISON PENDING'
+  echo "toolchain profile: $profile_id"
+  echo "lake build exit code: $lake_build_exit"
+  echo "lake env lean MathlibSmoke.lean exit code: $smoke_exit"
+  echo "portable proof replay file: $portable_proof_file"
+  echo 'portable runtime gates: portable-lean-version, portable-mathlib-smoke, portable-proof-replay'
+  echo "archive SHA-256: $archive_sha256"
+  echo "workspace tree SHA-256: $workspace_tree_sha256"
+  echo "parts: $(wc -l < "$out_dir/parts.ndjson")"
+  echo 'offline reconstructions: 2 (Docker --network none, explicit portable runtime wrapper)'
+  echo "reproducibility fingerprint SHA-256: $(sha256sum "$out_dir/reproducibility-fingerprint.json" | cut -d' ' -f1)"
+} | tee "$out_dir/verification-summary.log"
+
+# Stage the index in a flat directory. GitHub's artifact action otherwise
+# preserves the unrelated out/ and scripts/ source paths, which makes a
+# connector download disagree with the reconstruction helper's layout.
+transport_index_dir="$out_dir/transport-index"
+mkdir -p "$transport_index_dir"
+cp "$parts_dir/part-sha256sums.txt" \
+  "$out_dir/toolchain-manifest.json" \
+  "$out_dir/toolchain-manifest.json.sha256" \
+  "$repo_root/scripts/download-actions-artifacts.sh" \
+  "$repo_root/scripts/verify-and-reconstruct.sh" \
+  "$transport_index_dir/"
+
+rm -f "$archive"
