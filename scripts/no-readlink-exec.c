@@ -1,53 +1,48 @@
 #define _GNU_SOURCE
 
+#include <dlfcn.h>
 #include <errno.h>
-#include <linux/filter.h>
-#include <linux/seccomp.h>
-#include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <sys/prctl.h>
-#include <sys/syscall.h>
+#include <string.h>
+#include <sys/types.h>
 #include <unistd.h>
 
-static int install_filter(void) {
-    struct sock_filter filter[] = {
-        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
-#ifdef SYS_readlink
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_readlink, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA)),
-#endif
-#ifdef SYS_readlinkat
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_readlinkat, 0, 1),
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA)),
-#endif
-        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
-    };
-    struct sock_fprog program = {
-        .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])),
-        .filter = filter,
-    };
+/*
+ * Adversarial preload used only by certification. It reproduces the actual
+ * locked-down-sandbox failure mode by denying readlink("/proc/<pid>/exe") for
+ * the current process while delegating every other readlink unchanged.
+ *
+ * The portable Lean compatibility shim is loaded before this library. A direct
+ * Lean invocation with this adversary must fail; the portable wrapper must pass.
+ */
 
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
-        perror("prctl(PR_SET_NO_NEW_PRIVS)");
-        return -1;
-    }
-    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) {
-        perror("prctl(PR_SET_SECCOMP)");
-        return -1;
-    }
-    return 0;
+typedef ssize_t (*readlink_fn)(const char *, char *, size_t);
+
+static int is_current_process_exe(const char *path) {
+    char expected[64];
+    int n = snprintf(expected, sizeof(expected), "/proc/%ld/exe", (long)getpid());
+    return n > 0 && (size_t)n < sizeof(expected) && strcmp(path, expected) == 0;
 }
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s PROGRAM [ARGS...]\n", argv[0]);
-        return 64;
+static readlink_fn resolve_real_readlink(void) {
+    static readlink_fn fn = NULL;
+    if (fn == NULL) {
+        void *symbol = dlsym(RTLD_NEXT, "readlink");
+        memcpy(&fn, &symbol, sizeof(fn));
     }
-    if (install_filter() != 0) {
-        return 70;
+    return fn;
+}
+
+ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size) {
+    if (is_current_process_exe(path)) {
+        errno = EPERM;
+        return -1;
     }
-    execv(argv[1], &argv[1]);
-    perror("execv");
-    return 71;
+
+    readlink_fn real_readlink = resolve_real_readlink();
+    if (real_readlink == NULL) {
+        errno = ENOSYS;
+        return -1;
+    }
+    return real_readlink(path, buffer, size);
 }
