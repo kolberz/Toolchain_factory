@@ -76,7 +76,6 @@ export PATH="$lean_home/bin:$PATH"
 export LEAN_SYSROOT="$lean_home"
 
 record_gate 'lean-version' 'PASS' "lean --version"
-
 echo "Cloning exactly Mathlib ${MATHLIB_TAG}."
 git clone --depth 1 --branch "$MATHLIB_TAG" https://github.com/leanprover-community/mathlib4.git "$mathlib_dir" 2>&1 | tee "$logs_dir/mathlib-clone.log"
 actual_mathlib_commit="$(git -C "$mathlib_dir" rev-parse HEAD)"
@@ -86,6 +85,7 @@ printf '%s  %s\n' "$MATHLIB_LAKE_MANIFEST_SHA256" "$mathlib_dir/lake-manifest.js
 cp "$mathlib_dir/lake-manifest.json" "$work_root/mathlib-release-lake-manifest.json"
 
 cp "$repo_root/MathlibSmoke.lean" "$mathlib_dir/MathlibSmoke.lean"
+cp "$repo_root/HatActivationLedgerV68_SEALED.lean" "$mathlib_dir/HatActivationLedgerV68_SEALED.lean"
 cp "$repo_root/InvalidTheorem.lean" "$mathlib_dir/InvalidTheorem.lean"
 cd "$mathlib_dir"
 record_gate 'lake-update' 'PASS' 'lake update'
