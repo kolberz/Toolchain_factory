@@ -18,11 +18,11 @@ cp "$repo_root/scripts/lean-exepath-shim.c" "$portable_root/runtime-src/lean-exe
 cp "$repo_root/scripts/no-readlink-exec.c" "$portable_root/runtime-src/no-readlink-exec.c"
 cp "$repo_root/scripts/install-portable-runtime.sh" "$portable_root/runtime-src/install-portable-runtime.sh"
 
-cc -std=c11 -O2 -fPIC -shared -Wl,-z,relro,-z,now \
+cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared -Wl,-z,relro,-z,now \
   -o "$portable_root/lib/lean-exepath-shim.so" \
   "$portable_root/runtime-src/lean-exepath-shim.c" -ldl
 
-cc -std=c11 -O2 -Wl,-z,relro,-z,now \
+cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,-z,relro,-z,now \
   -o "$portable_root/lib/no-readlink-exec" \
   "$portable_root/runtime-src/no-readlink-exec.c"
 chmod +x "$portable_root/lib/no-readlink-exec"
