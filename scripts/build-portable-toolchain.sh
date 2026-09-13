@@ -72,7 +72,7 @@ lean_home="$(find "$work_root/lean-release" -mindepth 1 -maxdepth 1 -type d -nam
 [[ -n "$lean_home" ]]
 export PATH="$lean_home/bin:$PATH"
 # Prevent consumers of the build-time environment from having to infer the
-# installation root from the running executable.
+# installation root from the running executable where higher-level APIs honor it.
 export LEAN_SYSROOT="$lean_home"
 
 record_gate 'lean-version' 'PASS' "lean --version"
@@ -175,75 +175,23 @@ printf '%s\n' "$portable_lean_path" > "$portable_root/PORTABLE_LEAN_PATH"
 cp "$repo_root/scripts/verify-and-reconstruct.sh" "$portable_root/verify-and-reconstruct.sh"
 chmod +x "$portable_root/verify-and-reconstruct.sh"
 
-cat > "$portable_root/portable-lean-env" <<'PORTABLE_ENV'
-#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-LEAN_BIN="$ROOT/lean/bin/lean"
-LAKE_BIN="$ROOT/lean/bin/lake"
-PATH_FILE="$ROOT/PORTABLE_LEAN_PATH"
-
-[[ -x "$LEAN_BIN" ]] || { echo "missing Lean executable: $LEAN_BIN" >&2; exit 69; }
-[[ -x "$LAKE_BIN" ]] || { echo "missing Lake executable: $LAKE_BIN" >&2; exit 69; }
-[[ -f "$PATH_FILE" ]] || { echo "missing portable Lean path file: $PATH_FILE" >&2; exit 69; }
-
-portable_path="$(cat "$PATH_FILE")"
-[[ "$portable_path" == *"__PORTABLE_ROOT__"* ]] || {
-  echo 'portable Lean path is missing its relocatable root token' >&2
-  exit 65
-}
-
-export LEAN_SYSROOT="$ROOT/lean"
-export LEAN_PATH="${portable_path//__PORTABLE_ROOT__/$ROOT}"
-export LEAN="$LEAN_BIN"
-export LAKE="$LAKE_BIN"
-export PATH="$ROOT/lean/bin:${PATH:-}"
-export LD_LIBRARY_PATH="$ROOT/lean/lib/lean:$ROOT/lean/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
-if [[ $# -eq 0 ]]; then
-  cat <<EOF
-LEAN_SYSROOT=$LEAN_SYSROOT
-LEAN_PATH=$LEAN_PATH
-LEAN=$LEAN
-LAKE=$LAKE
-EOF
-  exit 0
-fi
-
-case "$1" in
-  lean)
-    shift
-    cd "$ROOT/mathlib"
-    exec "$LEAN_BIN" "$@"
-    ;;
-  lake)
-    shift
-    cd "$ROOT/mathlib"
-    exec "$LAKE_BIN" "$@"
-    ;;
-  env)
-    shift
-    cd "$ROOT/mathlib"
-    exec env "$@"
-    ;;
-  *)
-    cd "$ROOT/mathlib"
-    exec "$@"
-    ;;
-esac
-PORTABLE_ENV
-chmod +x "$portable_root/portable-lean-env"
+# Build the audited Linux executable-path compatibility shim and its seccomp
+# adversarial probe, then install the wrapper that binds explicit sysroot/path
+# information to the relocated bundle.
+record_gate 'portable-runtime-install' 'PASS' \
+  "bash '$repo_root/scripts/install-portable-runtime.sh' '$portable_root' '$repo_root'"
 
 # First-class portable runtime gates. Inherited Lean path hints are removed and
 # only ordinary system tools remain on PATH before the wrapper initializes its
-# explicit sysroot/search-path environment.
+# explicit environment. The smoke and proof replay are launched under a seccomp
+# filter that denies readlink/readlinkat syscalls; success therefore certifies
+# that Lean startup did not need /proc/<pid>/exe.
 record_gate 'portable-lean-version' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean --version"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean --version"
 record_gate 'portable-mathlib-smoke' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/lib/no-readlink-exec' '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
 record_gate 'portable-proof-replay' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean '$portable_proof_file'"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/lib/no-readlink-exec' '$portable_root/portable-lean-env' lean '$portable_proof_file'"
 
 (
   cd "$portable_root"
@@ -334,10 +282,10 @@ for number in 1 2; do
 
   set +e
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin /portable/portable-lean-env lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin /portable/portable-lean-env lake build' > "$logs_dir/offline-$number-lake-build.log" 2>&1
   offline_build_exit=$?
   docker run --rm --network none -v "$reconstruction/portable-lean-toolchain:/portable" -w /portable/mathlib lean-toolchain-offline-verifier \
-    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE PATH=/usr/bin:/bin /portable/portable-lean-env lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
+    bash -c 'git config --global --add safe.directory "*"; git -C .lake/packages/plausible remote get-url origin; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin /portable/portable-lean-env lake env lean MathlibSmoke.lean' > "$logs_dir/offline-$number-smoke.log" 2>&1
   offline_smoke_exit=$?
   set -e
   cat "$logs_dir/offline-$number-lake-build.log"
@@ -400,7 +348,7 @@ grep -F 'discovered part set differs from checksum inventory' "$logs_dir/unliste
   echo "lake build exit code: $lake_build_exit"
   echo "lake env lean MathlibSmoke.lean exit code: $smoke_exit"
   echo "portable proof replay file: $portable_proof_file"
-  echo 'portable runtime gates: portable-lean-version, portable-mathlib-smoke, portable-proof-replay'
+  echo 'portable runtime gates: portable-runtime-install, portable-lean-version, portable-mathlib-smoke(no-readlink), portable-proof-replay(no-readlink)'
   echo "archive SHA-256: $archive_sha256"
   echo "workspace tree SHA-256: $workspace_tree_sha256"
   echo "parts: $(wc -l < "$out_dir/parts.ndjson")"
