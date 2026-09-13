@@ -38,7 +38,7 @@ static readlink_fn resolve_real_readlink(void) {
 }
 
 ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size) {
-    if (path != NULL && buffer != NULL && is_current_process_exe(path)) {
+    if (is_current_process_exe(path)) {
         const char *execfn = (const char *)getauxval(AT_EXECFN);
         if (execfn != NULL && execfn[0] != '\0') {
             size_t len = strlen(execfn);
