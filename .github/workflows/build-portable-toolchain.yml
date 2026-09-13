@@ -33,6 +33,10 @@ on:
       - 'toolchain-profiles.json'
       - 'tests/**'
 
+concurrency:
+  group: portable-toolchain-${{ github.workflow }}-${{ github.ref }}-${{ inputs.profile || 'lean-4.32.2' }}
+  cancel-in-progress: true
+
 env:
   TOOLCHAIN_PROFILE: ${{ inputs.profile || 'lean-4.32.2' }}
 
@@ -256,11 +260,11 @@ jobs:
           docker run --rm --network none \
             -v "$PWD/consumer/reconstructed/portable-lean-toolchain:/portable" \
             -w /portable/mathlib lean-toolchain-consumer-verifier \
-            bash -c 'git config --global --add safe.directory "*"; export PATH=/portable/lean/bin:/usr/bin:/bin; lake build'
+            bash -c 'git config --global --add safe.directory "*"; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin /portable/portable-lean-env lake build'
           docker run --rm --network none \
             -v "$PWD/consumer/reconstructed/portable-lean-toolchain:/portable" \
             -w /portable/mathlib lean-toolchain-consumer-verifier \
-            bash -c 'git config --global --add safe.directory "*"; export PATH=/portable/lean/bin:/usr/bin:/bin; lake env lean MathlibSmoke.lean'
+            bash -c 'git config --global --add safe.directory "*"; env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin /portable/portable-lean-env lake env lean MathlibSmoke.lean'
       - name: Re-evaluate downloaded evidence
         run: >-
           npx tsx scripts/evaluate-evidence.ts
