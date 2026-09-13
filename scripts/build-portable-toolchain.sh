@@ -175,23 +175,25 @@ printf '%s\n' "$portable_lean_path" > "$portable_root/PORTABLE_LEAN_PATH"
 cp "$repo_root/scripts/verify-and-reconstruct.sh" "$portable_root/verify-and-reconstruct.sh"
 chmod +x "$portable_root/verify-and-reconstruct.sh"
 
-# Build the audited Linux executable-path compatibility shim and its seccomp
-# adversarial probe, then install the wrapper that binds explicit sysroot/path
-# information to the relocated bundle.
+# Build the audited Linux executable-path compatibility shim and a scoped
+# adversary that denies only /proc/<current-pid>/exe. This models the actual
+# sandbox failure without breaking unrelated filesystem path resolution.
 record_gate 'portable-runtime-install' 'PASS' \
   "bash '$repo_root/scripts/install-portable-runtime.sh' '$portable_root' '$repo_root'"
 
-# First-class portable runtime gates. Inherited Lean path hints are removed and
-# only ordinary system tools remain on PATH before the wrapper initializes its
-# explicit environment. The smoke and proof replay are launched under a seccomp
-# filter that denies readlink/readlinkat syscalls; success therefore certifies
-# that Lean startup did not need /proc/<pid>/exe.
+proc_exe_deny="$portable_root/lib/proc-exe-deny-shim.so"
+
+# Negative control: raw Lean must fail when its own /proc executable lookup is
+# denied. The wrapper then prepends its AT_EXECFN compatibility shim ahead of
+# the same adversary; version, Mathlib smoke, and proof replay must all pass.
+record_gate 'portable-proc-exe-negative-control' 'FAIL' \
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/lean/bin/lean' --version"
 record_gate 'portable-lean-version' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/portable-lean-env' lean --version"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean --version"
 record_gate 'portable-mathlib-smoke' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/lib/no-readlink-exec' '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
 record_gate 'portable-proof-replay' 'PASS' \
-  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_PRELOAD PATH=/usr/bin:/bin '$portable_root/lib/no-readlink-exec' '$portable_root/portable-lean-env' lean '$portable_proof_file'"
+  "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean '$portable_proof_file'"
 
 (
   cd "$portable_root"
@@ -348,7 +350,7 @@ grep -F 'discovered part set differs from checksum inventory' "$logs_dir/unliste
   echo "lake build exit code: $lake_build_exit"
   echo "lake env lean MathlibSmoke.lean exit code: $smoke_exit"
   echo "portable proof replay file: $portable_proof_file"
-  echo 'portable runtime gates: portable-runtime-install, portable-lean-version, portable-mathlib-smoke(no-readlink), portable-proof-replay(no-readlink)'
+  echo 'portable runtime gates: install, raw-proc-exe-denial negative control, wrapped version, wrapped Mathlib smoke, wrapped proof replay'
   echo "archive SHA-256: $archive_sha256"
   echo "workspace tree SHA-256: $workspace_tree_sha256"
   echo "parts: $(wc -l < "$out_dir/parts.ndjson")"
