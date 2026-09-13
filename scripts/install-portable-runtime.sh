@@ -15,17 +15,16 @@ repo_root="$(cd "$2" && pwd)"
 
 mkdir -p "$portable_root/lib" "$portable_root/runtime-src"
 cp "$repo_root/scripts/lean-exepath-shim.c" "$portable_root/runtime-src/lean-exepath-shim.c"
-cp "$repo_root/scripts/no-readlink-exec.c" "$portable_root/runtime-src/no-readlink-exec.c"
+cp "$repo_root/scripts/no-readlink-exec.c" "$portable_root/runtime-src/proc-exe-deny-shim.c"
 cp "$repo_root/scripts/install-portable-runtime.sh" "$portable_root/runtime-src/install-portable-runtime.sh"
 
 cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared -Wl,-z,relro,-z,now \
   -o "$portable_root/lib/lean-exepath-shim.so" \
   "$portable_root/runtime-src/lean-exepath-shim.c" -ldl
 
-cc -std=c11 -O2 -Wall -Wextra -Werror -Wl,-z,relro,-z,now \
-  -o "$portable_root/lib/no-readlink-exec" \
-  "$portable_root/runtime-src/no-readlink-exec.c"
-chmod +x "$portable_root/lib/no-readlink-exec"
+cc -std=c11 -O2 -Wall -Wextra -Werror -fPIC -shared -Wl,-z,relro,-z,now \
+  -o "$portable_root/lib/proc-exe-deny-shim.so" \
+  "$portable_root/runtime-src/proc-exe-deny-shim.c" -ldl
 
 cat > "$portable_root/portable-lean-env" <<'PORTABLE_ENV'
 #!/usr/bin/env bash
@@ -56,6 +55,8 @@ export PATH="$ROOT/lean/bin:${PATH:-}"
 export LD_LIBRARY_PATH="$ROOT/lean/lib/lean:$ROOT/lean/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 # Lean's Linux IO.appPath reads /proc/<pid>/exe during search-path startup.
 # Interpose only that self-executable readlink and answer it from AT_EXECFN.
+# Any pre-existing preload (including the certification denial adversary) comes
+# after this compatibility shim, so only the intended self lookup is repaired.
 export LD_PRELOAD="$EXEPATH_SHIM${LD_PRELOAD:+:$LD_PRELOAD}"
 
 if [[ $# -eq 0 ]]; then
