@@ -78,6 +78,23 @@ theorem dependentConeSize_eq_zero_of_free
       rcases hfree with ⟨ha, hc⟩
       simp [dependentConeSize, iha ha, ihc hc]
 
+/-- Exact range-avoidance criterion: the dependent cone is empty exactly when
+`v` is absent from the expression. -/
+theorem dependentConeSize_eq_zero_iff_free
+    (v : Nat) (e : Expr) :
+    dependentConeSize v e = 0 ↔ FreeOf v e := by
+  induction e with
+  | const c =>
+      simp [dependentConeSize, FreeOf]
+  | var x =>
+      by_cases h : x = v
+      · simp [dependentConeSize, FreeOf, h]
+      · simp [dependentConeSize, FreeOf, h]
+  | add a c iha ihc =>
+      simp [dependentConeSize, FreeOf, iha, ihc]
+  | mul a c iha ihc =>
+      simp [dependentConeSize, FreeOf, iha, ihc]
+
 /-- The dependent cone never exceeds the full tree syntax. -/
 theorem dependentConeSize_le_treeSize (v : Nat) (e : Expr) :
     dependentConeSize v e ≤ treeSize e := by
@@ -127,6 +144,7 @@ theorem supportSensitiveUpdateBudget_le_treeBound
 #print axioms restrict_eq_self_of_free
 #print axioms both_cofactors_eq_self_of_free
 #print axioms dependentConeSize_eq_zero_of_free
+#print axioms dependentConeSize_eq_zero_iff_free
 #print axioms dependentConeSize_le_treeSize
 #print axioms supportSensitiveUpdateBudget_eq_one_of_free
 #print axioms supportSensitiveUpdateBudget_le_treeBound
