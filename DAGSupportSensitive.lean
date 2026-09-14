@@ -2,91 +2,81 @@ import DAGRestrictionUpdate
 
 namespace DAGRestrictionUpdate
 
-/-- Variables syntactically occurring below an expression node. -/
-def support : Expr → Finset Nat
-  | .const _ => ∅
-  | .var x => {x}
-  | .add a b => support a ∪ support b
-  | .mul a b => support a ∪ support b
+/-- `FreeOf v e` means coordinate `v` is absent from the syntactic support of
+`e`. Keeping this structural avoids importing a finite-set representation into
+the trusted statement. -/
+def FreeOf (v : Nat) : Expr → Prop
+  | .const _ => True
+  | .var x => x ≠ v
+  | .add a b => FreeOf v a ∧ FreeOf v b
+  | .mul a b => FreeOf v a ∧ FreeOf v b
 
-/-- If coordinate `v` is absent from a subexpression's support, restricting that
+/-- If coordinate `v` is absent from a subexpression, restricting that
 coordinate leaves the subexpression structurally unchanged. In a hash-consed
-implementation this is the exact condition under which the original node may be
+implementation this is the exact condition under which the original node can be
 reused rather than rebuilt. -/
-theorem restrict_eq_self_of_not_mem_support
+theorem restrict_eq_self_of_free
     (v b : Nat) (e : Expr)
-    (hfree : v ∉ support e) :
+    (hfree : FreeOf v e) :
     restrict v b e = e := by
   induction e with
   | const c =>
       rfl
   | var x =>
-      simp only [support, Finset.mem_singleton] at hfree
-      have hx : x ≠ v := by
-        intro hxv
-        exact hfree hxv.symm
-      simp [restrict, hx]
+      simp only [FreeOf] at hfree
+      simp [restrict, hfree]
   | add a c iha ihc =>
-      simp only [support, Finset.mem_union, not_or] at hfree
+      simp only [FreeOf] at hfree
       rcases hfree with ⟨ha, hc⟩
       simp [restrict, iha ha, ihc hc]
   | mul a c iha ihc =>
-      simp only [support, Finset.mem_union, not_or] at hfree
+      simp only [FreeOf] at hfree
       rcases hfree with ⟨ha, hc⟩
       simp [restrict, iha ha, ihc hc]
 
 /-- Both Boolean cofactors reuse a `v`-free subexpression. -/
-theorem both_cofactors_eq_self_of_not_mem_support
+theorem both_cofactors_eq_self_of_free
     (v : Nat) (e : Expr)
-    (hfree : v ∉ support e) :
+    (hfree : FreeOf v e) :
     restrict v 0 e = e ∧ restrict v 1 e = e := by
   constructor
-  · exact restrict_eq_self_of_not_mem_support v 0 e hfree
-  · exact restrict_eq_self_of_not_mem_support v 1 e hfree
+  · exact restrict_eq_self_of_free v 0 e hfree
+  · exact restrict_eq_self_of_free v 1 e hfree
 
-/-- Number of syntax nodes in the `v`-dependent ancestral cone. This is a
-representation-independent upper-bound ingredient; it is not itself an
-allocator measurement. -/
+/-- Number of syntax nodes in the `v`-dependent ancestral cone. A compound node
+belongs to the cone exactly when at least one child has a nonempty dependent
+cone. This is an abstract accounting object, not an allocator measurement. -/
 def dependentConeSize (v : Nat) : Expr → Nat
   | .const _ => 0
   | .var x => if x = v then 1 else 0
   | .add a b =>
-      if v ∈ support a ∪ support b then
-        1 + dependentConeSize v a + dependentConeSize v b
-      else
-        0
+      let ca := dependentConeSize v a
+      let cb := dependentConeSize v b
+      if ca = 0 ∧ cb = 0 then 0 else 1 + ca + cb
   | .mul a b =>
-      if v ∈ support a ∪ support b then
-        1 + dependentConeSize v a + dependentConeSize v b
-      else
-        0
+      let ca := dependentConeSize v a
+      let cb := dependentConeSize v b
+      if ca = 0 ∧ cb = 0 then 0 else 1 + ca + cb
 
 /-- A support-free subtree contributes no nodes to the dependent cone. -/
-theorem dependentConeSize_eq_zero_of_not_mem_support
+theorem dependentConeSize_eq_zero_of_free
     (v : Nat) (e : Expr)
-    (hfree : v ∉ support e) :
+    (hfree : FreeOf v e) :
     dependentConeSize v e = 0 := by
   induction e with
   | const c =>
       rfl
   | var x =>
-      simp only [support, Finset.mem_singleton] at hfree
-      have hx : x ≠ v := by
-        intro hxv
-        exact hfree hxv.symm
-      simp [dependentConeSize, hx]
+      simp only [FreeOf] at hfree
+      simp [dependentConeSize, hfree]
   | add a c iha ihc =>
-      simp only [support, Finset.mem_union, not_or] at hfree
+      simp only [FreeOf] at hfree
       rcases hfree with ⟨ha, hc⟩
-      have hu : v ∉ support a ∪ support c := by
-        simp [ha, hc]
-      simp [dependentConeSize, hu]
+      simp [dependentConeSize, iha ha, ihc hc]
   | mul a c iha ihc =>
-      simp only [support, Finset.mem_union, not_or] at hfree
+      simp only [FreeOf] at hfree
       rcases hfree with ⟨ha, hc⟩
-      have hu : v ∉ support a ∪ support c := by
-        simp [ha, hc]
-      simp [dependentConeSize, hu]
+      simp [dependentConeSize, iha ha, ihc hc]
 
 /-- The dependent cone never exceeds the full tree syntax. -/
 theorem dependentConeSize_le_treeSize (v : Nat) (e : Expr) :
@@ -99,15 +89,15 @@ theorem dependentConeSize_le_treeSize (v : Nat) (e : Expr) :
       · simp [dependentConeSize, treeSize, h]
       · simp [dependentConeSize, treeSize, h]
   | add a c iha ihc =>
-      by_cases h : v ∈ support a ∪ support c
+      by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
+      · simp [dependentConeSize, treeSize, h]
       · simp [dependentConeSize, treeSize, h]
         omega
-      · simp [dependentConeSize, treeSize, h]
   | mul a c iha ihc =>
-      by_cases h : v ∈ support a ∪ support c
+      by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
+      · simp [dependentConeSize, treeSize, h]
       · simp [dependentConeSize, treeSize, h]
         omega
-      · simp [dependentConeSize, treeSize, h]
 
 /-- Abstract allocation budget for an implementation that reuses every node
 outside the dependent cone and rebuilds at most one node per affected node for
@@ -117,12 +107,12 @@ def supportSensitiveUpdateBudget (v : Nat) (e : Expr) : Nat :=
 
 /-- Range avoidance collapses the abstract update budget to the final add node
 when the eliminated variable is absent. -/
-theorem supportSensitiveUpdateBudget_eq_one_of_not_mem_support
+theorem supportSensitiveUpdateBudget_eq_one_of_free
     (v : Nat) (e : Expr)
-    (hfree : v ∉ support e) :
+    (hfree : FreeOf v e) :
     supportSensitiveUpdateBudget v e = 1 := by
   simp [supportSensitiveUpdateBudget,
-    dependentConeSize_eq_zero_of_not_mem_support v e hfree]
+    dependentConeSize_eq_zero_of_free v e hfree]
 
 /-- The support-sensitive budget refines the elementary whole-tree duplication
 bound. Connecting this budget to actual allocated DAG nodes is a separate
@@ -134,11 +124,11 @@ theorem supportSensitiveUpdateBudget_le_treeBound
   have h := dependentConeSize_le_treeSize v e
   omega
 
-#print axioms restrict_eq_self_of_not_mem_support
-#print axioms both_cofactors_eq_self_of_not_mem_support
-#print axioms dependentConeSize_eq_zero_of_not_mem_support
+#print axioms restrict_eq_self_of_free
+#print axioms both_cofactors_eq_self_of_free
+#print axioms dependentConeSize_eq_zero_of_free
 #print axioms dependentConeSize_le_treeSize
-#print axioms supportSensitiveUpdateBudget_eq_one_of_not_mem_support
+#print axioms supportSensitiveUpdateBudget_eq_one_of_free
 #print axioms supportSensitiveUpdateBudget_le_treeBound
 
 end DAGRestrictionUpdate
