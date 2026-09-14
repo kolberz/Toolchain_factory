@@ -91,13 +91,13 @@ theorem dependentConeSize_le_treeSize (v : Nat) (e : Expr) :
   | add a c iha ihc =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
       · simp [dependentConeSize, treeSize, h]
-      · simp [dependentConeSize, treeSize, h]
-        omega
+      · simpa [dependentConeSize, treeSize, h] using
+          Nat.add_le_add (Nat.add_le_add_left iha 1) ihc
   | mul a c iha ihc =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
       · simp [dependentConeSize, treeSize, h]
-      · simp [dependentConeSize, treeSize, h]
-        omega
+      · simpa [dependentConeSize, treeSize, h] using
+          Nat.add_le_add (Nat.add_le_add_left iha 1) ihc
 
 /-- Abstract allocation budget for an implementation that reuses every node
 outside the dependent cone and rebuilds at most one node per affected node for
@@ -121,8 +121,8 @@ theorem supportSensitiveUpdateBudget_le_treeBound
     (v : Nat) (e : Expr) :
     supportSensitiveUpdateBudget v e ≤ 1 + 2 * treeSize e := by
   unfold supportSensitiveUpdateBudget
-  have h := dependentConeSize_le_treeSize v e
-  omega
+  exact Nat.add_le_add_left
+    (Nat.mul_le_mul_left 2 (dependentConeSize_le_treeSize v e)) 1
 
 #print axioms restrict_eq_self_of_free
 #print axioms both_cofactors_eq_self_of_free
