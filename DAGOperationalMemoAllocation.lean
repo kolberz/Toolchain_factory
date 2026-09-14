@@ -101,23 +101,33 @@ theorem memoPairBuild_event_bound
       s.events.length + 2 * dependentConeSize v e := by
   induction e generalizing s with
   | const c =>
-      simp [memoPairBuild, dependentConeSize]
+      simp only [memoPairBuild, dependentConeSize, Nat.mul_zero, Nat.add_zero]
+      exact Nat.le_refl _
   | var x =>
       by_cases hx : x = v
       · subst x
         cases hlookup : lookupMemo (.var v) s.entries with
         | some p =>
-            simp [memoPairBuild, dependentConeSize, hlookup]
+            simp only [memoPairBuild, if_pos rfl, hlookup, dependentConeSize,
+              Nat.mul_one]
+            exact Nat.le_add_right _ _
         | none =>
-            simp [memoPairBuild, dependentConeSize, hlookup,
-              insertMemoPair]
-      · simp [memoPairBuild, dependentConeSize, hx]
+            simp only [memoPairBuild, if_pos rfl, hlookup, dependentConeSize,
+              Nat.mul_one, insertMemoPair, List.length_append,
+              List.length_cons, List.length_nil, Nat.add_zero]
+            exact Nat.le_refl _
+      · simp only [memoPairBuild, if_neg hx, dependentConeSize,
+          Nat.mul_zero, Nat.add_zero]
+        exact Nat.le_refl _
   | add a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
-      · simp [memoPairBuild, dependentConeSize, hfree]
+      · simp only [memoPairBuild, dependentConeSize, if_pos hfree,
+          Nat.mul_zero, Nat.add_zero]
+        exact Nat.le_refl _
       · cases hlookup : lookupMemo (.add a b) s.entries with
         | some p =>
-            simp [memoPairBuild, dependentConeSize, hfree, hlookup]
+            simp only [memoPairBuild, dependentConeSize, if_neg hfree, hlookup]
+            exact Nat.le_add_right _ _
         | none =>
             let ra := memoPairBuild v a s
             have ha := iha s
@@ -126,15 +136,19 @@ theorem memoPairBuild_event_bound
             have hab := Nat.le_trans hb
               (Nat.add_le_add_right ha (2 * dependentConeSize v b))
             have htotal := Nat.add_le_add_right hab 2
-            simpa [memoPairBuild, dependentConeSize, hfree, hlookup,
-              insertMemoPair, ra, rb, Nat.mul_add, Nat.add_assoc,
-              Nat.add_comm, Nat.add_left_comm] using htotal
+            simpa only [memoPairBuild, dependentConeSize, if_neg hfree, hlookup,
+              insertMemoPair, ra, rb, List.length_append, List.length_cons,
+              List.length_nil, Nat.add_zero, Nat.mul_add, Nat.mul_one,
+              Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using htotal
   | mul a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
-      · simp [memoPairBuild, dependentConeSize, hfree]
+      · simp only [memoPairBuild, dependentConeSize, if_pos hfree,
+          Nat.mul_zero, Nat.add_zero]
+        exact Nat.le_refl _
       · cases hlookup : lookupMemo (.mul a b) s.entries with
         | some p =>
-            simp [memoPairBuild, dependentConeSize, hfree, hlookup]
+            simp only [memoPairBuild, dependentConeSize, if_neg hfree, hlookup]
+            exact Nat.le_add_right _ _
         | none =>
             let ra := memoPairBuild v a s
             have ha := iha s
@@ -143,9 +157,10 @@ theorem memoPairBuild_event_bound
             have hab := Nat.le_trans hb
               (Nat.add_le_add_right ha (2 * dependentConeSize v b))
             have htotal := Nat.add_le_add_right hab 2
-            simpa [memoPairBuild, dependentConeSize, hfree, hlookup,
-              insertMemoPair, ra, rb, Nat.mul_add, Nat.add_assoc,
-              Nat.add_comm, Nat.add_left_comm] using htotal
+            simpa only [memoPairBuild, dependentConeSize, if_neg hfree, hlookup,
+              insertMemoPair, ra, rb, List.length_append, List.length_cons,
+              List.length_nil, Nat.add_zero, Nat.mul_add, Nat.mul_one,
+              Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using htotal
 
 /-- The actual operational memo evaluator never allocates more nodes than the
 support-sensitive reference evaluator. -/
