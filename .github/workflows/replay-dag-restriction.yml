@@ -1,0 +1,72 @@
+name: Replay DAG restriction theorem
+run-name: DAG restriction replay · ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'DAGRestrictionUpdate.lean'
+      - '.github/workflows/replay-dag-restriction.yml'
+      - 'scripts/build-portable-toolchain.sh'
+      - 'scripts/install-portable-runtime.sh'
+      - 'scripts/lean-exepath-shim.c'
+      - 'scripts/no-readlink-exec.c'
+      - 'toolchain-profiles.json'
+
+concurrency:
+  group: dag-restriction-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOOLCHAIN_PROFILE: lean-4.32.2
+  PORTABLE_PROOF_SOURCE: DAGRestrictionUpdate.lean
+  PORTABLE_PROOF_FILE: DAGRestrictionUpdate.lean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: [1, 2]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install packaging prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes jq rsync zstd
+      - name: Build factory and replay DAG theorem candidate
+        env:
+          BUILDER_INSTANCE: dag-${{ matrix.builder }}
+        run: bash scripts/build-portable-toolchain.sh
+      - name: Require explicit proof replay gate
+        run: |
+          jq -e 'select(.id == "portable-proof-replay" and .actualExitCode == 0)' out/gates.ndjson >/dev/null
+          grep -F 'portable proof replay file: DAGRestrictionUpdate.lean' out/verification-summary.log
+      - name: Upload replay evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dag-restriction-replay-${{ matrix.builder }}
+          path: |
+            out/gates.ndjson
+            out/logs/portable-proof-replay.log
+            out/logs/portable-mathlib-smoke.log
+            out/certification-evidence.json
+            out/reproducibility-fingerprint.json
+            out/verification-summary.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dag-restriction-failure-${{ matrix.builder }}
+          path: out/
+          if-no-files-found: ignore
+          compression-level: 6
+          retention-days: 14
