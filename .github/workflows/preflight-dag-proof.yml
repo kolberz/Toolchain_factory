@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - 'DAGRestrictionUpdate.lean'
+      - 'DAGSemiringSemantics.lean'
       - 'DAGSupportSensitive.lean'
       - 'DAGAllocatorContract.lean'
       - '.github/workflows/preflight-dag-proof.yml'
@@ -66,6 +67,14 @@ jobs:
           mkdir -p .lake/build/lib/lean
           lake env lean -o .lake/build/lib/lean/DAGRestrictionUpdate.olean DAGRestrictionUpdate.lean \
             | tee "$GITHUB_WORKSPACE/dag-preflight.log"
+      - name: Kernel replay generalized semiring semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGSemiringSemantics.lean" DAGSemiringSemantics.lean
+          lake env lean DAGSemiringSemantics.lean \
+            | tee "$GITHUB_WORKSPACE/dag-semiring-preflight.log"
       - name: Kernel replay support-sensitive theorem layer
         shell: bash
         run: |
@@ -85,13 +94,15 @@ jobs:
       - name: Reject placeholders
         run: |
           ! grep -nE '\bsorry\b|\badmit\b' \
-            DAGRestrictionUpdate.lean DAGSupportSensitive.lean DAGAllocatorContract.lean
+            DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
+            DAGSupportSensitive.lean DAGAllocatorContract.lean
       - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dag-lean-preflight
           path: |
             dag-preflight.log
+            dag-semiring-preflight.log
             dag-support-preflight.log
             dag-allocator-preflight.log
           if-no-files-found: error
