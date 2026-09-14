@@ -9,6 +9,7 @@ on:
       - 'DAGRestrictionUpdate.lean'
       - 'DAGSemiringSemantics.lean'
       - 'DAGSupportSensitive.lean'
+      - 'DAGCofactorPair.lean'
       - 'DAGAllocatorContract.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
@@ -83,6 +84,14 @@ jobs:
           cp "$GITHUB_WORKSPACE/DAGSupportSensitive.lean" DAGSupportSensitive.lean
           lake env lean -o .lake/build/lib/lean/DAGSupportSensitive.olean DAGSupportSensitive.lean \
             | tee "$GITHUB_WORKSPACE/dag-support-preflight.log"
+      - name: Kernel replay paired cofactor traversal
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGCofactorPair.lean" DAGCofactorPair.lean
+          lake env lean -o .lake/build/lib/lean/DAGCofactorPair.olean DAGCofactorPair.lean \
+            | tee "$GITHUB_WORKSPACE/dag-pair-preflight.log"
       - name: Kernel replay allocator contract layer
         shell: bash
         run: |
@@ -95,7 +104,7 @@ jobs:
         run: |
           ! grep -nE '\bsorry\b|\badmit\b' \
             DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
-            DAGSupportSensitive.lean DAGAllocatorContract.lean
+            DAGSupportSensitive.lean DAGCofactorPair.lean DAGAllocatorContract.lean
       - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -104,6 +113,7 @@ jobs:
             dag-preflight.log
             dag-semiring-preflight.log
             dag-support-preflight.log
+            dag-pair-preflight.log
             dag-allocator-preflight.log
           if-no-files-found: error
           compression-level: 6
