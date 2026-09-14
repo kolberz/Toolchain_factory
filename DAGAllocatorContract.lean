@@ -52,16 +52,16 @@ theorem allocation_eq_one_of_free
 /-- Per-run certificate shape for connecting an empirical allocator trace to the
 formal bound without promoting the trace itself to an axiom. -/
 structure AllocationReceipt where
-  variable : Nat
+  coord : Nat
   expression : Expr
   allocatedNodes : Nat
   budget : Nat
-  budget_definition : budget = supportSensitiveUpdateBudget variable expression
+  budget_definition : budget = supportSensitiveUpdateBudget coord expression
   within_budget : allocatedNodes ≤ budget
 
 /-- Every valid receipt yields the mathematical allocation bound for that run. -/
 theorem receipt_allocation_bound (r : AllocationReceipt) :
-    r.allocatedNodes ≤ supportSensitiveUpdateBudget r.variable r.expression := by
+    r.allocatedNodes ≤ supportSensitiveUpdateBudget r.coord r.expression := by
   rw [← r.budget_definition]
   exact r.within_budget
 
