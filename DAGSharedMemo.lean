@@ -4,7 +4,7 @@ namespace DAGRestrictionUpdate
 
 /-- A list of affected syntax occurrences. Unlike `dependentConeSize`, this
 retains the actual expression at each affected occurrence so that a subsequent
-deduplication step can model hash-consing by structural node identity. -/
+computable deduplication step can model hash-consing by structural node identity. -/
 def dependentOccurrenceNodes (v : Nat) : Expr → List Expr
   | .const _ => []
   | .var x =>
@@ -35,37 +35,63 @@ theorem dependentOccurrenceNodes_length (v : Nat) (e : Expr) :
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [dependentOccurrenceNodes, dependentConeSize, h]
       · simp [dependentOccurrenceNodes, dependentConeSize, h, iha, ihb]
-        omega
+        exact
+          calc
+            dependentConeSize v a + (dependentConeSize v b + 1) =
+                (dependentConeSize v a + dependentConeSize v b) + 1 :=
+              (Nat.add_assoc _ _ _).symm
+            _ = 1 + (dependentConeSize v a + dependentConeSize v b) :=
+              Nat.add_comm _ _
   | mul a b iha ihb =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [dependentOccurrenceNodes, dependentConeSize, h]
       · simp [dependentOccurrenceNodes, dependentConeSize, h, iha, ihb]
-        omega
+        exact
+          calc
+            dependentConeSize v a + (dependentConeSize v b + 1) =
+                (dependentConeSize v a + dependentConeSize v b) + 1 :=
+              (Nat.add_assoc _ _ _).symm
+            _ = 1 + (dependentConeSize v a + dependentConeSize v b) :=
+              Nat.add_comm _ _
 
-/-- The finite set of affected DAG nodes under structural hash-consing.
-Repeated equal subexpressions collapse to one node. -/
-def dagDependentSet (v : Nat) (e : Expr) : Finset Expr :=
-  (dependentOccurrenceNodes v e).toFinset
+/-- Executable structural deduplication. The retained representative is the last
+occurrence of each structurally equal expression. This choice is deterministic
+and requires only the derived `DecidableEq Expr`; no classical enumeration is
+used. -/
+def dedupNodes : List Expr → List Expr
+  | [] => []
+  | x :: xs =>
+      if x ∈ xs then dedupNodes xs else x :: dedupNodes xs
 
-/-- Canonical finite enumeration used by the executable allocation trace. -/
+/-- Structural deduplication never increases list length. -/
+theorem dedupNodes_length_le (xs : List Expr) :
+    (dedupNodes xs).length ≤ xs.length := by
+  induction xs with
+  | nil =>
+      rfl
+  | cons x xs ih =>
+      by_cases h : x ∈ xs
+      · simpa [dedupNodes, h] using Nat.le_succ_of_le ih
+      · simpa [dedupNodes, h] using Nat.succ_le_succ ih
+
+/-- Hash-consed dependent DAG nodes, represented by a deterministic executable
+structural deduplication of the affected occurrences. -/
 def dagDependentNodes (v : Nat) (e : Expr) : List Expr :=
-  (dagDependentSet v e).toList
+  dedupNodes (dependentOccurrenceNodes v e)
 
 /-- Number of distinct affected DAG nodes under structural hash-consing. -/
 def dagDependentCount (v : Nat) (e : Expr) : Nat :=
-  (dagDependentSet v e).card
+  (dagDependentNodes v e).length
 
 /-- Deduplication never increases the affected-node count. -/
 theorem dagDependentCount_le_dependentConeSize (v : Nat) (e : Expr) :
     dagDependentCount v e ≤ dependentConeSize v e := by
-  unfold dagDependentCount dagDependentSet
-  rw [← dependentOccurrenceNodes_length v e]
-  exact List.toFinset_card_le _
-
-/-- The executable node enumeration has exactly the distinct DAG-node count. -/
-theorem dagDependentNodes_length (v : Nat) (e : Expr) :
-    (dagDependentNodes v e).length = dagDependentCount v e := by
-  simp [dagDependentNodes, dagDependentCount]
+  calc
+    dagDependentCount v e =
+        (dedupNodes (dependentOccurrenceNodes v e)).length := rfl
+    _ ≤ (dependentOccurrenceNodes v e).length :=
+      dedupNodes_length_le _
+    _ = dependentConeSize v e := dependentOccurrenceNodes_length v e
 
 /-- Allocation events for the shared evaluator carry the structural node being
 materialized, making this an executable memoized trace rather than a numeric
@@ -90,7 +116,11 @@ theorem sharedPairEvents_length (xs : List Expr) :
       rfl
   | cons x xs ih =>
       simp [sharedPairEvents, ih]
-      omega
+      exact
+        calc
+          1 + (1 + 2 * xs.length) = (1 + 1) + 2 * xs.length :=
+            (Nat.add_assoc _ _ _).symm
+          _ = 2 + 2 * xs.length := rfl
 
 /-- Complete shared-DAG update allocation trace, including the final sum node. -/
 def sharedUpdateEvents (v : Nat) (e : Expr) : List SharedAllocationEvent :=
@@ -108,7 +138,7 @@ def sharedDAGUpdateBudget (v : Nat) (e : Expr) : Nat :=
 theorem sharedAllocated_eq_dagBudget (v : Nat) (e : Expr) :
     sharedAllocated v e = sharedDAGUpdateBudget v e := by
   simp [sharedAllocated, sharedUpdateEvents, sharedDAGUpdateBudget,
-    sharedPairEvents_length, dagDependentNodes_length, Nat.add_comm]
+    dagDependentCount, sharedPairEvents_length, Nat.add_comm]
 
 /-- Hash-consing can only improve on the tree-shaped concrete reference
 allocator's allocation count. -/
@@ -131,10 +161,10 @@ theorem sharedAllocated_eq_one_of_free
     rw [dependentOccurrenceNodes_length]
     exact hzero
   simp [sharedAllocated, sharedUpdateEvents, dagDependentNodes,
-    dagDependentSet, hocc, sharedPairEvents]
+    dagDependentCount, dedupNodes, hocc, sharedPairEvents]
 
 /-- Regression witness with genuine sharing. `s` appears twice syntactically,
-but the shared DAG allocates cofactors for it only once. -/
+but structural hash-consing allocates cofactors for it only once. -/
 def repeatedDependentExample : Expr :=
   let s : Expr := .add (.var 0) (.const 7)
   .mul s s
@@ -160,8 +190,8 @@ theorem repeatedDependentExample_referenceAllocated :
   decide
 
 #print axioms dependentOccurrenceNodes_length
+#print axioms dedupNodes_length_le
 #print axioms dagDependentCount_le_dependentConeSize
-#print axioms dagDependentNodes_length
 #print axioms sharedPairEvents_length
 #print axioms sharedAllocated_eq_dagBudget
 #print axioms sharedAllocated_le_referenceAllocated
