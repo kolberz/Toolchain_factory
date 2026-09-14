@@ -108,11 +108,11 @@ theorem memoPairBuild_event_bound
       · subst x
         cases hlookup : lookupMemo (.var v) s.entries with
         | some p =>
-            simp only [memoPairBuild, if_pos rfl, dif_pos rfl, hlookup, dependentConeSize,
+            simp only [memoPairBuild, ite_true, dite_true, hlookup, dependentConeSize,
               Nat.mul_one]
             exact Nat.le_add_right _ _
         | none =>
-            simp only [memoPairBuild, if_pos rfl, dif_pos rfl, hlookup, dependentConeSize,
+            simp only [memoPairBuild, ite_true, dite_true, hlookup, dependentConeSize,
               Nat.mul_one, insertMemoPair, List.length_append,
               List.length_cons, List.length_nil, Nat.add_zero]
             exact Nat.le_refl _
@@ -170,8 +170,10 @@ theorem operationalMemoAllocated_le_referenceAllocated
   have hbound := memoPairBuild_event_bound v e emptyMemoState
   rw [referenceAllocated_eq_budget]
   have htotal := Nat.add_le_add_right hbound 1
-  simpa [operationalMemoAllocated, operationalMemoUpdateBuild,
-    emptyMemoState, supportSensitiveUpdateBudget, Nat.add_comm] using htotal
+  simpa only [operationalMemoAllocated, operationalMemoUpdateBuild,
+    emptyMemoState, supportSensitiveUpdateBudget, List.length_append,
+    List.length_cons, List.length_nil, Nat.zero_add, Nat.add_zero,
+    Nat.add_comm] using htotal
 
 /-- Therefore the real memoized evaluator discharges the allocator contract
 without assuming a separate implementation-level cost premise. -/
