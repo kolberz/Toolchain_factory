@@ -42,6 +42,8 @@ theorem dependentOccurrenceNodes_length (v : Nat) (e : Expr) :
               (Nat.add_assoc _ _ _).symm
             _ = 1 + (dependentConeSize v a + dependentConeSize v b) :=
               Nat.add_comm _ _
+            _ = (1 + dependentConeSize v a) + dependentConeSize v b :=
+              (Nat.add_assoc _ _ _).symm
   | mul a b iha ihb =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [dependentOccurrenceNodes, dependentConeSize, h]
@@ -53,26 +55,31 @@ theorem dependentOccurrenceNodes_length (v : Nat) (e : Expr) :
               (Nat.add_assoc _ _ _).symm
             _ = 1 + (dependentConeSize v a + dependentConeSize v b) :=
               Nat.add_comm _ _
+            _ = (1 + dependentConeSize v a) + dependentConeSize v b :=
+              (Nat.add_assoc _ _ _).symm
 
 /-- Executable structural deduplication. The retained representative is the last
 occurrence of each structurally equal expression. This choice is deterministic
-and requires only the derived `DecidableEq Expr`; no classical enumeration is
-used. -/
+and uses the derived computational `DecidableEq Expr`. -/
 def dedupNodes : List Expr → List Expr
   | [] => []
   | x :: xs =>
       if x ∈ xs then dedupNodes xs else x :: dedupNodes xs
 
-/-- Structural deduplication never increases list length. -/
+/-- Structural deduplication never increases list length. This proof deliberately
+avoids simplifier-driven reasoning about list membership so the theorem does not
+acquire a classical-choice dependency. -/
 theorem dedupNodes_length_le (xs : List Expr) :
     (dedupNodes xs).length ≤ xs.length := by
   induction xs with
   | nil =>
-      rfl
+      exact Nat.le_refl 0
   | cons x xs ih =>
-      by_cases h : x ∈ xs
-      · simpa [dedupNodes, h] using Nat.le_succ_of_le ih
-      · simpa [dedupNodes, h] using Nat.succ_le_succ ih
+      unfold dedupNodes
+      split
+      · exact Nat.le_succ_of_le ih
+      · simp only [List.length_cons]
+        exact Nat.succ_le_succ ih
 
 /-- Hash-consed dependent DAG nodes, represented by a deterministic executable
 structural deduplication of the affected occurrences. -/
@@ -118,9 +125,11 @@ theorem sharedPairEvents_length (xs : List Expr) :
       simp [sharedPairEvents, ih]
       exact
         calc
-          1 + (1 + 2 * xs.length) = (1 + 1) + 2 * xs.length :=
-            (Nat.add_assoc _ _ _).symm
-          _ = 2 + 2 * xs.length := rfl
+          (2 * xs.length + 1) + 1 = 2 * xs.length + (1 + 1) :=
+            Nat.add_assoc _ _ _
+          _ = 2 * xs.length + 2 * 1 := rfl
+          _ = 2 * (xs.length + 1) :=
+            (Nat.mul_add _ _ _).symm
 
 /-- Complete shared-DAG update allocation trace, including the final sum node. -/
 def sharedUpdateEvents (v : Nat) (e : Expr) : List SharedAllocationEvent :=
@@ -161,7 +170,7 @@ theorem sharedAllocated_eq_one_of_free
     rw [dependentOccurrenceNodes_length]
     exact hzero
   simp [sharedAllocated, sharedUpdateEvents, dagDependentNodes,
-    dagDependentCount, dedupNodes, hocc, sharedPairEvents]
+    dedupNodes, hocc, sharedPairEvents]
 
 /-- Regression witness with genuine sharing. `s` appears twice syntactically,
 but structural hash-consing allocates cofactors for it only once. -/
