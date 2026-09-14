@@ -16,6 +16,7 @@ on:
       - 'DAGOperationalMemo.lean'
       - 'DAGOperationalMemoProof.lean'
       - 'DAGOperationalMemoAllocation.lean'
+      - 'DAGCertifiedCore.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
 
@@ -79,7 +80,7 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
           cp "$GITHUB_WORKSPACE/DAGSemiringSemantics.lean" DAGSemiringSemantics.lean
-          lake env lean DAGSemiringSemantics.lean \
+          lake env lean -o .lake/build/lib/lean/DAGSemiringSemantics.olean DAGSemiringSemantics.lean \
             | tee "$GITHUB_WORKSPACE/dag-semiring-preflight.log"
       - name: Kernel replay support-sensitive theorem layer
         shell: bash
@@ -143,8 +144,25 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
           cp "$GITHUB_WORKSPACE/DAGOperationalMemoAllocation.lean" DAGOperationalMemoAllocation.lean
-          lake env lean DAGOperationalMemoAllocation.lean \
+          lake env lean -o .lake/build/lib/lean/DAGOperationalMemoAllocation.olean DAGOperationalMemoAllocation.lean \
             | tee "$GITHUB_WORKSPACE/dag-operational-allocation-preflight.log"
+      - name: Kernel replay certified core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGCertifiedCore.lean" DAGCertifiedCore.lean
+          lake env lean DAGCertifiedCore.lean \
+            | tee "$GITHUB_WORKSPACE/dag-core-preflight.log"
+      - name: Require operational theorem axiom surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "operationalMemo_allocator_conforms' depends on axioms: [propext]" dag-operational-allocation-preflight.log
+          grep -F "eval_operationalMemoUpdateBuild_eq_marginalize' depends on axioms: [propext]" dag-operational-proof-preflight.log
+          if grep -E 'sorryAx|Classical\.choice|Quot\.sound' dag-*-preflight.log dag-preflight.log; then
+            exit 1
+          fi
       - name: Reject placeholders
         run: |
           ! grep -nE '\bsorry\b|\badmit\b' \
@@ -152,8 +170,9 @@ jobs:
             DAGSupportSensitive.lean DAGCofactorPair.lean \
             DAGAllocatorContract.lean DAGReferenceAllocator.lean \
             DAGSharedMemo.lean DAGOperationalMemo.lean DAGOperationalMemoProof.lean \
-            DAGOperationalMemoAllocation.lean
+            DAGOperationalMemoAllocation.lean DAGCertifiedCore.lean
       - name: Upload preflight logs
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dag-lean-preflight
@@ -168,6 +187,7 @@ jobs:
             dag-operational-memo-preflight.log
             dag-operational-proof-preflight.log
             dag-operational-allocation-preflight.log
+            dag-core-preflight.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90

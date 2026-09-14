@@ -12,6 +12,10 @@ on:
       - 'DAGCofactorPair.lean'
       - 'DAGAllocatorContract.lean'
       - 'DAGReferenceAllocator.lean'
+      - 'DAGSharedMemo.lean'
+      - 'DAGOperationalMemo.lean'
+      - 'DAGOperationalMemoProof.lean'
+      - 'DAGOperationalMemoAllocation.lean'
       - 'DAGCertifiedCore.lean'
       - '.github/workflows/replay-dag-certified-core.yml'
 
@@ -76,11 +80,16 @@ jobs:
           cp DAGCofactorPair.lean "$mathlib/"
           cp DAGAllocatorContract.lean "$mathlib/"
           cp DAGReferenceAllocator.lean "$mathlib/"
+          cp DAGSharedMemo.lean "$mathlib/"
+          cp DAGOperationalMemo.lean "$mathlib/"
+          cp DAGOperationalMemoProof.lean "$mathlib/"
+          cp DAGOperationalMemoAllocation.lean "$mathlib/"
           cp DAGCertifiedCore.lean "$mathlib/"
           ! grep -nE '\bsorry\b|\badmit\b' \
             DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
             DAGSupportSensitive.lean DAGCofactorPair.lean \
-            DAGAllocatorContract.lean DAGReferenceAllocator.lean DAGCertifiedCore.lean
+            DAGAllocatorContract.lean DAGReferenceAllocator.lean \
+            DAGSharedMemo.lean DAGOperationalMemo.lean DAGOperationalMemoProof.lean DAGOperationalMemoAllocation.lean DAGCertifiedCore.lean
 
       - name: Build offline replay container
         run: docker build --tag dag-core-offline-verifier --file scripts/offline-verifier.Dockerfile .
@@ -116,8 +125,16 @@ jobs:
                 | tee /portable/replay-logs/05-allocator-contract.log
               run_lean -o .lake/build/lib/lean/DAGReferenceAllocator.olean DAGReferenceAllocator.lean \
                 | tee /portable/replay-logs/06-reference-allocator.log
+              run_lean -o .lake/build/lib/lean/DAGSharedMemo.olean DAGSharedMemo.lean \
+                | tee /portable/replay-logs/07-shared-memo.log
+              run_lean -o .lake/build/lib/lean/DAGOperationalMemo.olean DAGOperationalMemo.lean \
+                | tee /portable/replay-logs/08-operational-memo.log
+              run_lean -o .lake/build/lib/lean/DAGOperationalMemoProof.olean DAGOperationalMemoProof.lean \
+                | tee /portable/replay-logs/09-operational-proof.log
+              run_lean -o .lake/build/lib/lean/DAGOperationalMemoAllocation.olean DAGOperationalMemoAllocation.lean \
+                | tee /portable/replay-logs/10-operational-allocation.log
               run_lean DAGCertifiedCore.lean \
-                | tee /portable/replay-logs/07-core.log
+                | tee /portable/replay-logs/11-core.log
             '
           cp "$portable"/replay-logs/*.log replay-logs/
 
@@ -136,9 +153,18 @@ jobs:
           grep -F "referenceAllocated_eq_budget' depends on axioms: [propext]" replay-logs/06-reference-allocator.log
           grep -F "reference_allocator_conforms' depends on axioms: [propext]" replay-logs/06-reference-allocator.log
           grep -F "eval_referenceUpdateBuild_eq_marginalize' depends on axioms: [propext]" replay-logs/06-reference-allocator.log
-          grep -F "certifiedCore_marker' does not depend on any axioms" replay-logs/07-core.log
-          if grep -R -F 'sorryAx' replay-logs; then
-            echo 'sorryAx detected in certified DAG replay logs' >&2
+          grep -F "certifiedCore_marker' does not depend on any axioms" replay-logs/11-core.log
+          grep -F "memoPairBuild_correct_valid' depends on axioms: [propext]" replay-logs/09-operational-proof.log
+          grep -F "eval_operationalMemoUpdateBuild_eq_marginalize' depends on axioms: [propext]" replay-logs/09-operational-proof.log
+          grep -F "repeatedDependentExample_operational_entries' does not depend on any axioms" replay-logs/08-operational-memo.log
+          grep -F "repeatedDependentExample_operational_allocated' does not depend on any axioms" replay-logs/08-operational-memo.log
+          grep -F "repeatedDependentExample_operational_expression' does not depend on any axioms" replay-logs/08-operational-memo.log
+          grep -F "memoPairBuild_count_valid' depends on axioms: [propext]" replay-logs/10-operational-allocation.log
+          grep -F "operationalMemoAllocated_eq_entries' depends on axioms: [propext]" replay-logs/10-operational-allocation.log
+          grep -F "memoPairBuild_event_bound' depends on axioms: [propext]" replay-logs/10-operational-allocation.log
+          grep -F "operationalMemo_allocator_conforms' depends on axioms: [propext]" replay-logs/10-operational-allocation.log
+          if grep -R -E 'sorryAx|Classical\.choice|Quot\.sound' replay-logs; then
+            echo 'Unexpected axiom detected in certified DAG replay logs' >&2
             exit 1
           fi
 
@@ -147,7 +173,7 @@ jobs:
         run: |
           set -euo pipefail
           jq -n \
-            --arg schemaVersion '1.2.0' \
+            --arg schemaVersion '1.3.0' \
             --arg sourceCommit "$GITHUB_SHA" \
             --arg toolchainRunId '34789732660' \
             --arg builder '${{ matrix.builder }}' \
@@ -157,6 +183,10 @@ jobs:
             --arg pairSha "$(sha256sum DAGCofactorPair.lean | cut -d' ' -f1)" \
             --arg allocatorContractSha "$(sha256sum DAGAllocatorContract.lean | cut -d' ' -f1)" \
             --arg referenceAllocatorSha "$(sha256sum DAGReferenceAllocator.lean | cut -d' ' -f1)" \
+            --arg sharedMemoSha "$(sha256sum DAGSharedMemo.lean | cut -d' ' -f1)" \
+            --arg operationalMemoSha "$(sha256sum DAGOperationalMemo.lean | cut -d' ' -f1)" \
+            --arg operationalProofSha "$(sha256sum DAGOperationalMemoProof.lean | cut -d' ' -f1)" \
+            --arg operationalAllocationSha "$(sha256sum DAGOperationalMemoAllocation.lean | cut -d' ' -f1)" \
             --arg coreSha "$(sha256sum DAGCertifiedCore.lean | cut -d' ' -f1)" \
             --arg semanticLogSha "$(sha256sum replay-logs/01-semantic.log | cut -d' ' -f1)" \
             --arg semiringLogSha "$(sha256sum replay-logs/02-semiring.log | cut -d' ' -f1)" \
@@ -164,8 +194,12 @@ jobs:
             --arg pairLogSha "$(sha256sum replay-logs/04-pair.log | cut -d' ' -f1)" \
             --arg allocatorContractLogSha "$(sha256sum replay-logs/05-allocator-contract.log | cut -d' ' -f1)" \
             --arg referenceAllocatorLogSha "$(sha256sum replay-logs/06-reference-allocator.log | cut -d' ' -f1)" \
-            --arg coreLogSha "$(sha256sum replay-logs/07-core.log | cut -d' ' -f1)" \
-            '{schemaVersion:$schemaVersion,sourceCommit:$sourceCommit,toolchainRunId:$toolchainRunId,builder:$builder,networkMode:"none",procExeLookup:"denied",proofSources:{restriction:$restrictionSha,semiring:$semiringSha,support:$supportSha,pair:$pairSha,allocatorContract:$allocatorContractSha,referenceAllocator:$referenceAllocatorSha,core:$coreSha},logs:{semantic:$semanticLogSha,semiring:$semiringLogSha,support:$supportLogSha,pair:$pairLogSha,allocatorContract:$allocatorContractLogSha,referenceAllocator:$referenceAllocatorLogSha,core:$coreLogSha}}' \
+            --arg sharedMemoLogSha "$(sha256sum replay-logs/07-shared-memo.log | cut -d' ' -f1)" \
+            --arg operationalMemoLogSha "$(sha256sum replay-logs/08-operational-memo.log | cut -d' ' -f1)" \
+            --arg operationalProofLogSha "$(sha256sum replay-logs/09-operational-proof.log | cut -d' ' -f1)" \
+            --arg operationalAllocationLogSha "$(sha256sum replay-logs/10-operational-allocation.log | cut -d' ' -f1)" \
+            --arg coreLogSha "$(sha256sum replay-logs/11-core.log | cut -d' ' -f1)" \
+            '{schemaVersion:$schemaVersion,sourceCommit:$sourceCommit,toolchainRunId:$toolchainRunId,builder:$builder,networkMode:"none",procExeLookup:"denied",proofSources:{restriction:$restrictionSha,semiring:$semiringSha,support:$supportSha,pair:$pairSha,allocatorContract:$allocatorContractSha,referenceAllocator:$referenceAllocatorSha,sharedMemo:$sharedMemoSha,operationalMemo:$operationalMemoSha,operationalProof:$operationalProofSha,operationalAllocation:$operationalAllocationSha,core:$coreSha},logs:{semantic:$semanticLogSha,semiring:$semiringLogSha,support:$supportLogSha,pair:$pairLogSha,allocatorContract:$allocatorContractLogSha,referenceAllocator:$referenceAllocatorLogSha,sharedMemo:$sharedMemoLogSha,operationalMemo:$operationalMemoLogSha,operationalProof:$operationalProofLogSha,operationalAllocation:$operationalAllocationLogSha,core:$coreLogSha}}' \
             > replay-receipt.json
 
       - name: Upload replay evidence
