@@ -108,11 +108,11 @@ theorem memoPairBuild_event_bound
       · subst x
         cases hlookup : lookupMemo (.var v) s.entries with
         | some p =>
-            simp only [memoPairBuild, ite_true, dite_true, hlookup, dependentConeSize,
+            simp only [memoPairBuild, (show v = v from rfl), ite_true, dite_true, hlookup, dependentConeSize,
               Nat.mul_one]
             exact Nat.le_add_right _ _
         | none =>
-            simp only [memoPairBuild, ite_true, dite_true, hlookup, dependentConeSize,
+            simp only [memoPairBuild, (show v = v from rfl), ite_true, dite_true, hlookup, dependentConeSize,
               Nat.mul_one, insertMemoPair, List.length_append,
               List.length_cons, List.length_nil, Nat.add_zero]
             exact Nat.le_refl _
