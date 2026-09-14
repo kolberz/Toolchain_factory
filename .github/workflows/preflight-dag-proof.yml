@@ -8,6 +8,7 @@ on:
     paths:
       - 'DAGRestrictionUpdate.lean'
       - 'DAGSupportSensitive.lean'
+      - 'DAGAllocatorContract.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
 
@@ -71,11 +72,20 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
           cp "$GITHUB_WORKSPACE/DAGSupportSensitive.lean" DAGSupportSensitive.lean
-          lake env lean DAGSupportSensitive.lean \
+          lake env lean -o .lake/build/lib/lean/DAGSupportSensitive.olean DAGSupportSensitive.lean \
             | tee "$GITHUB_WORKSPACE/dag-support-preflight.log"
+      - name: Kernel replay allocator contract layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGAllocatorContract.lean" DAGAllocatorContract.lean
+          lake env lean DAGAllocatorContract.lean \
+            | tee "$GITHUB_WORKSPACE/dag-allocator-preflight.log"
       - name: Reject placeholders
         run: |
-          ! grep -nE '\bsorry\b|\badmit\b' DAGRestrictionUpdate.lean DAGSupportSensitive.lean
+          ! grep -nE '\bsorry\b|\badmit\b' \
+            DAGRestrictionUpdate.lean DAGSupportSensitive.lean DAGAllocatorContract.lean
       - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -83,6 +93,7 @@ jobs:
           path: |
             dag-preflight.log
             dag-support-preflight.log
+            dag-allocator-preflight.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
