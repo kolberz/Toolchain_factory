@@ -40,7 +40,7 @@ def referencePairBuild (v : Nat) : Expr → ReferencePairBuild
       else
         { zero := .var x, one := .var x, events := [] }
   | .add a b =>
-      if h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0 then
+      if _h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0 then
         { zero := .add a b, one := .add a b, events := [] }
       else
         let ra := referencePairBuild v a
@@ -49,7 +49,7 @@ def referencePairBuild (v : Nat) : Expr → ReferencePairBuild
           one := .add ra.one rb.one,
           events := ra.events ++ rb.events ++ [.addZero, .addOne] }
   | .mul a b =>
-      if h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0 then
+      if _h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0 then
         { zero := .mul a b, one := .mul a b, events := [] }
       else
         let ra := referencePairBuild v a
@@ -80,7 +80,19 @@ theorem referencePairBuild_pair (v : Nat) (e : Expr) :
           exact ⟨ha, hb⟩
         rw [cofactorPair_eq_self_of_free v (.add a b) hab]
         simp [referencePairBuild, h]
-      · simp [referencePairBuild, cofactorPair, h, iha, ihb]
+      · have ia0 :
+            (referencePairBuild v a).zero = (cofactorPair v a).1 := by
+          simpa using congrArg Prod.fst iha
+        have ia1 :
+            (referencePairBuild v a).one = (cofactorPair v a).2 := by
+          simpa using congrArg Prod.snd iha
+        have ib0 :
+            (referencePairBuild v b).zero = (cofactorPair v b).1 := by
+          simpa using congrArg Prod.fst ihb
+        have ib1 :
+            (referencePairBuild v b).one = (cofactorPair v b).2 := by
+          simpa using congrArg Prod.snd ihb
+        simp [referencePairBuild, cofactorPair, h, ia0, ia1, ib0, ib1]
   | mul a b iha ihb =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · have ha : FreeOf v a :=
@@ -91,7 +103,19 @@ theorem referencePairBuild_pair (v : Nat) (e : Expr) :
           exact ⟨ha, hb⟩
         rw [cofactorPair_eq_self_of_free v (.mul a b) hab]
         simp [referencePairBuild, h]
-      · simp [referencePairBuild, cofactorPair, h, iha, ihb]
+      · have ia0 :
+            (referencePairBuild v a).zero = (cofactorPair v a).1 := by
+          simpa using congrArg Prod.fst iha
+        have ia1 :
+            (referencePairBuild v a).one = (cofactorPair v a).2 := by
+          simpa using congrArg Prod.snd iha
+        have ib0 :
+            (referencePairBuild v b).zero = (cofactorPair v b).1 := by
+          simpa using congrArg Prod.fst ihb
+        have ib1 :
+            (referencePairBuild v b).one = (cofactorPair v b).2 := by
+          simpa using congrArg Prod.snd ihb
+        simp [referencePairBuild, cofactorPair, h, ia0, ia1, ib0, ib1]
 
 /-- The executable allocation-event count is exactly twice the dependent-cone
 size: one fresh node for each cofactor at every affected syntax node. -/
@@ -109,12 +133,12 @@ theorem referencePairBuild_event_length (v : Nat) (e : Expr) :
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [referencePairBuild, dependentConeSize, h]
       · simp [referencePairBuild, dependentConeSize, h, iha, ihb,
-          Nat.mul_add, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+          Nat.mul_add, Nat.add_comm, Nat.add_left_comm]
   | mul a b iha ihb =>
       by_cases h : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [referencePairBuild, dependentConeSize, h]
       · simp [referencePairBuild, dependentConeSize, h, iha, ihb,
-          Nat.mul_add, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+          Nat.mul_add, Nat.add_comm, Nat.add_left_comm]
 
 /-- Result of the complete update operation, including the final sum node. -/
 structure ReferenceUpdateBuild where
