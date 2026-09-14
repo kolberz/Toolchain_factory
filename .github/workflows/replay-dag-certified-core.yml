@@ -9,6 +9,7 @@ on:
       - 'DAGRestrictionUpdate.lean'
       - 'DAGSemiringSemantics.lean'
       - 'DAGSupportSensitive.lean'
+      - 'DAGCofactorPair.lean'
       - 'DAGAllocatorContract.lean'
       - 'DAGCertifiedCore.lean'
       - '.github/workflows/replay-dag-certified-core.yml'
@@ -71,11 +72,13 @@ jobs:
           cp DAGRestrictionUpdate.lean "$mathlib/"
           cp DAGSemiringSemantics.lean "$mathlib/"
           cp DAGSupportSensitive.lean "$mathlib/"
+          cp DAGCofactorPair.lean "$mathlib/"
           cp DAGAllocatorContract.lean "$mathlib/"
           cp DAGCertifiedCore.lean "$mathlib/"
           ! grep -nE '\bsorry\b|\badmit\b' \
             DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
-            DAGSupportSensitive.lean DAGAllocatorContract.lean DAGCertifiedCore.lean
+            DAGSupportSensitive.lean DAGCofactorPair.lean \
+            DAGAllocatorContract.lean DAGCertifiedCore.lean
 
       - name: Build offline replay container
         run: docker build --tag dag-core-offline-verifier --file scripts/offline-verifier.Dockerfile .
@@ -105,10 +108,12 @@ jobs:
                 | tee /portable/replay-logs/02-semiring.log
               run_lean -o .lake/build/lib/lean/DAGSupportSensitive.olean DAGSupportSensitive.lean \
                 | tee /portable/replay-logs/03-support.log
+              run_lean -o .lake/build/lib/lean/DAGCofactorPair.olean DAGCofactorPair.lean \
+                | tee /portable/replay-logs/04-pair.log
               run_lean -o .lake/build/lib/lean/DAGAllocatorContract.olean DAGAllocatorContract.lean \
-                | tee /portable/replay-logs/04-allocator.log
+                | tee /portable/replay-logs/05-allocator.log
               run_lean DAGCertifiedCore.lean \
-                | tee /portable/replay-logs/05-core.log
+                | tee /portable/replay-logs/06-core.log
             '
           cp "$portable"/replay-logs/*.log replay-logs/
 
@@ -119,29 +124,33 @@ jobs:
           grep -F "evalSemiring_restrict' depends on axioms: [propext]" replay-logs/02-semiring.log
           grep -F "evalSemiring_update_eq_marginalize' depends on axioms: [propext]" replay-logs/02-semiring.log
           grep -F "dependentConeSize_eq_zero_iff_free' depends on axioms: [propext]" replay-logs/03-support.log
-          grep -F "receipt_allocation_bound' does not depend on any axioms" replay-logs/04-allocator.log
-          grep -F "certifiedCore_marker' does not depend on any axioms" replay-logs/05-core.log
+          grep -F "cofactorPair_eq_restrictions' depends on axioms: [propext]" replay-logs/04-pair.log
+          grep -F "eval_updateFromPair_eq_marginalize' depends on axioms: [propext]" replay-logs/04-pair.log
+          grep -F "receipt_allocation_bound' does not depend on any axioms" replay-logs/05-allocator.log
+          grep -F "certifiedCore_marker' does not depend on any axioms" replay-logs/06-core.log
 
       - name: Write deterministic replay receipt
         shell: bash
         run: |
           set -euo pipefail
           jq -n \
-            --arg schemaVersion '1.0.0' \
+            --arg schemaVersion '1.1.0' \
             --arg sourceCommit "$GITHUB_SHA" \
             --arg toolchainRunId '34789732660' \
             --arg builder '${{ matrix.builder }}' \
             --arg restrictionSha "$(sha256sum DAGRestrictionUpdate.lean | cut -d' ' -f1)" \
             --arg semiringSha "$(sha256sum DAGSemiringSemantics.lean | cut -d' ' -f1)" \
             --arg supportSha "$(sha256sum DAGSupportSensitive.lean | cut -d' ' -f1)" \
+            --arg pairSha "$(sha256sum DAGCofactorPair.lean | cut -d' ' -f1)" \
             --arg allocatorSha "$(sha256sum DAGAllocatorContract.lean | cut -d' ' -f1)" \
             --arg coreSha "$(sha256sum DAGCertifiedCore.lean | cut -d' ' -f1)" \
             --arg semanticLogSha "$(sha256sum replay-logs/01-semantic.log | cut -d' ' -f1)" \
             --arg semiringLogSha "$(sha256sum replay-logs/02-semiring.log | cut -d' ' -f1)" \
             --arg supportLogSha "$(sha256sum replay-logs/03-support.log | cut -d' ' -f1)" \
-            --arg allocatorLogSha "$(sha256sum replay-logs/04-allocator.log | cut -d' ' -f1)" \
-            --arg coreLogSha "$(sha256sum replay-logs/05-core.log | cut -d' ' -f1)" \
-            '{schemaVersion:$schemaVersion,sourceCommit:$sourceCommit,toolchainRunId:$toolchainRunId,builder:$builder,networkMode:"none",procExeLookup:"denied",proofSources:{restriction:$restrictionSha,semiring:$semiringSha,support:$supportSha,allocator:$allocatorSha,core:$coreSha},logs:{semantic:$semanticLogSha,semiring:$semiringLogSha,support:$supportLogSha,allocator:$allocatorLogSha,core:$coreLogSha}}' \
+            --arg pairLogSha "$(sha256sum replay-logs/04-pair.log | cut -d' ' -f1)" \
+            --arg allocatorLogSha "$(sha256sum replay-logs/05-allocator.log | cut -d' ' -f1)" \
+            --arg coreLogSha "$(sha256sum replay-logs/06-core.log | cut -d' ' -f1)" \
+            '{schemaVersion:$schemaVersion,sourceCommit:$sourceCommit,toolchainRunId:$toolchainRunId,builder:$builder,networkMode:"none",procExeLookup:"denied",proofSources:{restriction:$restrictionSha,semiring:$semiringSha,support:$supportSha,pair:$pairSha,allocator:$allocatorSha,core:$coreSha},logs:{semantic:$semanticLogSha,semiring:$semiringLogSha,support:$supportLogSha,pair:$pairLogSha,allocator:$allocatorLogSha,core:$coreLogSha}}' \
             > replay-receipt.json
 
       - name: Upload replay evidence
