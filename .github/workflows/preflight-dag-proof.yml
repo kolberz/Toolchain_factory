@@ -13,6 +13,7 @@ on:
       - 'DAGAllocatorContract.lean'
       - 'DAGReferenceAllocator.lean'
       - 'DAGSharedMemo.lean'
+      - 'DAGOperationalMemo.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
 
@@ -110,20 +111,29 @@ jobs:
           cp "$GITHUB_WORKSPACE/DAGReferenceAllocator.lean" DAGReferenceAllocator.lean
           lake env lean -o .lake/build/lib/lean/DAGReferenceAllocator.olean DAGReferenceAllocator.lean \
             | tee "$GITHUB_WORKSPACE/dag-reference-allocator-preflight.log"
-      - name: Kernel replay shared DAG memo layer
+      - name: Kernel replay shared DAG memo accounting
         shell: bash
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
           cp "$GITHUB_WORKSPACE/DAGSharedMemo.lean" DAGSharedMemo.lean
-          lake env lean DAGSharedMemo.lean \
+          lake env lean -o .lake/build/lib/lean/DAGSharedMemo.olean DAGSharedMemo.lean \
             | tee "$GITHUB_WORKSPACE/dag-shared-memo-preflight.log"
+      - name: Kernel replay operational DAG memo evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGOperationalMemo.lean" DAGOperationalMemo.lean
+          lake env lean DAGOperationalMemo.lean \
+            | tee "$GITHUB_WORKSPACE/dag-operational-memo-preflight.log"
       - name: Reject placeholders
         run: |
           ! grep -nE '\bsorry\b|\badmit\b' \
             DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
             DAGSupportSensitive.lean DAGCofactorPair.lean \
-            DAGAllocatorContract.lean DAGReferenceAllocator.lean DAGSharedMemo.lean
+            DAGAllocatorContract.lean DAGReferenceAllocator.lean \
+            DAGSharedMemo.lean DAGOperationalMemo.lean
       - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -136,6 +146,7 @@ jobs:
             dag-allocator-preflight.log
             dag-reference-allocator-preflight.log
             dag-shared-memo-preflight.log
+            dag-operational-memo-preflight.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
