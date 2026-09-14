@@ -31,13 +31,14 @@ theorem memoPairBuild_count_valid
       simpa [memoPairBuild] using hs
   | var x =>
       by_cases hx : x = v
-      · cases hlookup : lookupMemo (.var x) s.entries with
+      · subst x
+        cases hlookup : lookupMemo (.var v) s.entries with
         | some p =>
-            simpa [memoPairBuild, hx, hlookup] using hs
+            simpa [memoPairBuild, hlookup] using hs
         | none =>
             have hi := insertMemoPair_count_valid
-              (.var x) (.const 0, .const 1) s hs
-            simpa [memoPairBuild, hx, hlookup] using hi
+              (.var v) (.const 0, .const 1) s hs
+            simpa [memoPairBuild, hlookup] using hi
       · simpa [memoPairBuild, hx] using hs
   | add a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
@@ -87,7 +88,7 @@ theorem operationalMemoAllocated_eq_entries (v : Nat) (e : Expr) :
     operationalMemoAllocated v e =
       1 + 2 * (operationalMemoUpdateBuild v e).state.entries.length := by
   have hcount := operationalMemo_state_count_valid v e
-  unfold MemoCountValid at hcount
+  unfold MemoCountValid operationalMemoUpdateBuild at hcount
   simp [operationalMemoAllocated, operationalMemoUpdateBuild, hcount,
     Nat.add_comm]
 
@@ -103,11 +104,12 @@ theorem memoPairBuild_event_bound
       simp [memoPairBuild, dependentConeSize]
   | var x =>
       by_cases hx : x = v
-      · cases hlookup : lookupMemo (.var x) s.entries with
+      · subst x
+        cases hlookup : lookupMemo (.var v) s.entries with
         | some p =>
-            simp [memoPairBuild, dependentConeSize, hx, hlookup]
+            simp [memoPairBuild, dependentConeSize, hlookup]
         | none =>
-            simp [memoPairBuild, dependentConeSize, hx, hlookup,
+            simp [memoPairBuild, dependentConeSize, hlookup,
               insertMemoPair]
       · simp [memoPairBuild, dependentConeSize, hx]
   | add a b iha ihb =>
@@ -121,11 +123,12 @@ theorem memoPairBuild_event_bound
             have ha := iha s
             let rb := memoPairBuild v b ra.2
             have hb := ihb ra.2
-            simp [memoPairBuild, dependentConeSize, hfree, hlookup,
-              insertMemoPair, ra, rb] at ⊢
-            dsimp [ra] at ha
-            dsimp [rb] at hb
-            omega
+            have hab := Nat.le_trans hb
+              (Nat.add_le_add_right ha (2 * dependentConeSize v b))
+            have htotal := Nat.add_le_add_right hab 2
+            simpa [memoPairBuild, dependentConeSize, hfree, hlookup,
+              insertMemoPair, ra, rb, Nat.mul_add, Nat.add_assoc,
+              Nat.add_comm, Nat.add_left_comm] using htotal
   | mul a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · simp [memoPairBuild, dependentConeSize, hfree]
@@ -137,11 +140,12 @@ theorem memoPairBuild_event_bound
             have ha := iha s
             let rb := memoPairBuild v b ra.2
             have hb := ihb ra.2
-            simp [memoPairBuild, dependentConeSize, hfree, hlookup,
-              insertMemoPair, ra, rb] at ⊢
-            dsimp [ra] at ha
-            dsimp [rb] at hb
-            omega
+            have hab := Nat.le_trans hb
+              (Nat.add_le_add_right ha (2 * dependentConeSize v b))
+            have htotal := Nat.add_le_add_right hab 2
+            simpa [memoPairBuild, dependentConeSize, hfree, hlookup,
+              insertMemoPair, ra, rb, Nat.mul_add, Nat.add_assoc,
+              Nat.add_comm, Nat.add_left_comm] using htotal
 
 /-- The actual operational memo evaluator never allocates more nodes than the
 support-sensitive reference evaluator. -/
@@ -150,9 +154,9 @@ theorem operationalMemoAllocated_le_referenceAllocated
     operationalMemoAllocated v e ≤ referenceAllocated v e := by
   have hbound := memoPairBuild_event_bound v e emptyMemoState
   rw [referenceAllocated_eq_budget]
-  unfold operationalMemoAllocated operationalMemoUpdateBuild
-  simp [emptyMemoState, supportSensitiveUpdateBudget] at hbound ⊢
-  omega
+  have htotal := Nat.add_le_add_right hbound 1
+  simpa [operationalMemoAllocated, operationalMemoUpdateBuild,
+    emptyMemoState, supportSensitiveUpdateBudget, Nat.add_comm] using htotal
 
 /-- Therefore the real memoized evaluator discharges the allocator contract
 without assuming a separate implementation-level cost premise. -/
