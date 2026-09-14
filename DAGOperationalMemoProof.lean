@@ -42,17 +42,22 @@ theorem memoPairBuild_correct_valid
       simp [memoPairBuild, cofactorPair, hs]
   | var x =>
       by_cases hx : x = v
-      · cases hlookup : lookupMemo (.var x) s.entries with
+      · subst x
+        cases hlookup : lookupMemo (.var v) s.entries with
         | none =>
             have hins :
                 MemoValid v
-                  (insertMemoPair (.var x) (.const 0, .const 1) s).entries := by
-              apply insertMemoPair_valid v (.var x) (.const 0, .const 1) s hs
-              simp [cofactorPair, hx]
-            simp [memoPairBuild, cofactorPair, hx, hlookup, hins]
+                  (insertMemoPair (.var v) (.const 0, .const 1) s).entries := by
+              apply insertMemoPair_valid v (.var v) (.const 0, .const 1) s hs
+              simp [cofactorPair]
+            constructor
+            · simp [memoPairBuild, cofactorPair, hlookup]
+            · simpa [memoPairBuild, hlookup] using hins
         | some p =>
-            have hp : p = cofactorPair v (.var x) := hs (.var x) p hlookup
-            simp [memoPairBuild, hx, hlookup, hp, hs]
+            have hp : p = cofactorPair v (.var v) := hs (.var v) p hlookup
+            constructor
+            · simpa [memoPairBuild, hlookup] using hp
+            · simpa [memoPairBuild, hlookup] using hs
       · simp [memoPairBuild, cofactorPair, hx, hs]
   | add a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
@@ -67,7 +72,9 @@ theorem memoPairBuild_correct_valid
         | some p =>
             have hp : p = cofactorPair v (.add a b) :=
               hs (.add a b) p hlookup
-            simp [memoPairBuild, hfree, hlookup, hp, hs]
+            constructor
+            · simpa [memoPairBuild, hfree, hlookup] using hp
+            · simpa [memoPairBuild, hfree, hlookup] using hs
         | none =>
             let ra := memoPairBuild v a s
             have ha := iha s hs
@@ -87,7 +94,9 @@ theorem memoPairBuild_correct_valid
               simp [p, cofactorPair, hraPair, hrbPair]
             have hins : MemoValid v (insertMemoPair (.add a b) p rb.2).entries :=
               insertMemoPair_valid v (.add a b) p rb.2 hrbValid hp
-            simp [memoPairBuild, hfree, hlookup, ra, rb, p, hp, hins]
+            constructor
+            · simpa [memoPairBuild, hfree, hlookup, ra, rb, p] using hp
+            · simpa [memoPairBuild, hfree, hlookup, ra, rb, p] using hins
   | mul a b iha ihb =>
       by_cases hfree : dependentConeSize v a = 0 ∧ dependentConeSize v b = 0
       · have ha : FreeOf v a :=
@@ -101,7 +110,9 @@ theorem memoPairBuild_correct_valid
         | some p =>
             have hp : p = cofactorPair v (.mul a b) :=
               hs (.mul a b) p hlookup
-            simp [memoPairBuild, hfree, hlookup, hp, hs]
+            constructor
+            · simpa [memoPairBuild, hfree, hlookup] using hp
+            · simpa [memoPairBuild, hfree, hlookup] using hs
         | none =>
             let ra := memoPairBuild v a s
             have ha := iha s hs
@@ -121,7 +132,9 @@ theorem memoPairBuild_correct_valid
               simp [p, cofactorPair, hraPair, hrbPair]
             have hins : MemoValid v (insertMemoPair (.mul a b) p rb.2).entries :=
               insertMemoPair_valid v (.mul a b) p rb.2 hrbValid hp
-            simp [memoPairBuild, hfree, hlookup, ra, rb, p, hp, hins]
+            constructor
+            · simpa [memoPairBuild, hfree, hlookup, ra, rb, p] using hp
+            · simpa [memoPairBuild, hfree, hlookup, ra, rb, p] using hins
 
 /-- Running the operational cache from empty state returns exactly the paired
 cofactor specification. -/
@@ -134,8 +147,9 @@ the original specification. -/
 theorem operationalMemoUpdateBuild_expression (v : Nat) (e : Expr) :
     (operationalMemoUpdateBuild v e).expression = update v e := by
   have hp := memoPairBuild_correct v e
-  simp [operationalMemoUpdateBuild, updateFromPair, updateFromPair_eq_update,
-    hp]
+  simp [operationalMemoUpdateBuild, hp]
+  change updateFromPair v e = update v e
+  exact updateFromPair_eq_update v e
 
 /-- End-to-end semantic correctness of the operational structural memo evaluator. -/
 theorem eval_operationalMemoUpdateBuild_eq_marginalize
