@@ -1,0 +1,74 @@
+name: Preflight DAG Lean proof
+run-name: DAG Lean preflight · ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'DAGRestrictionUpdate.lean'
+      - '.github/workflows/preflight-dag-proof.yml'
+      - 'toolchain-profiles.json'
+
+concurrency:
+  group: dag-lean-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lean-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Install prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes jq zstd
+      - name: Install exact Lean release
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="$(jq -ce '.profiles["lean-4.32.2"]' toolchain-profiles.json)"
+          version="$(jq -r '.leanVersion' <<< "$profile")"
+          artifact="$(jq -r '.releaseArtifact' <<< "$profile")"
+          sha="$(jq -r '.releaseTarballSha256' <<< "$profile")"
+          curl --fail --location --retry 3 \
+            "https://github.com/leanprover/lean4/releases/download/v${version}/${artifact}" \
+            -o "$RUNNER_TEMP/$artifact"
+          printf '%s  %s\n' "$sha" "$RUNNER_TEMP/$artifact" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/lean-release"
+          tar --use-compress-program=unzstd -xf "$RUNNER_TEMP/$artifact" -C "$RUNNER_TEMP/lean-release"
+          lean_home="$(find "$RUNNER_TEMP/lean-release" -mindepth 1 -maxdepth 1 -type d -name 'lean-*' -print -quit)"
+          echo "$lean_home/bin" >> "$GITHUB_PATH"
+          echo "LEAN_SYSROOT=$lean_home" >> "$GITHUB_ENV"
+      - name: Prepare exact Mathlib release
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="$(jq -ce '.profiles["lean-4.32.2"]' toolchain-profiles.json)"
+          tag="$(jq -r '.mathlibTag' <<< "$profile")"
+          commit="$(jq -r '.mathlibCommit' <<< "$profile")"
+          manifest_sha="$(jq -r '.mathlibLakeManifestSha256' <<< "$profile")"
+          git clone --depth 1 --branch "$tag" https://github.com/leanprover-community/mathlib4.git "$RUNNER_TEMP/mathlib4"
+          [[ "$(git -C "$RUNNER_TEMP/mathlib4" rev-parse HEAD)" == "$commit" ]]
+          printf '%s  %s\n' "$manifest_sha" "$RUNNER_TEMP/mathlib4/lake-manifest.json" | sha256sum --check --strict
+          cd "$RUNNER_TEMP/mathlib4"
+          lake exe cache get
+      - name: Kernel replay DAG theorem candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          lake env lean "$GITHUB_WORKSPACE/DAGRestrictionUpdate.lean" | tee "$GITHUB_WORKSPACE/dag-preflight.log"
+      - name: Reject placeholders
+        run: |
+          ! grep -nE '\bsorry\b|\badmit\b' DAGRestrictionUpdate.lean
+      - name: Upload preflight log
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dag-lean-preflight
+          path: dag-preflight.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
