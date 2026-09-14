@@ -79,21 +79,33 @@ theorem dependentConeSize_eq_zero_of_free
       simp [dependentConeSize, iha ha, ihc hc]
 
 /-- Exact range-avoidance criterion: the dependent cone is empty exactly when
-`v` is absent from the expression. -/
+`v` is absent from the expression. The forward direction is proved directly,
+without classical case splitting on the recursive proposition. -/
 theorem dependentConeSize_eq_zero_iff_free
     (v : Nat) (e : Expr) :
     dependentConeSize v e = 0 ↔ FreeOf v e := by
-  induction e with
-  | const c =>
-      simp [dependentConeSize, FreeOf]
-  | var x =>
-      by_cases h : x = v
-      · simp [dependentConeSize, FreeOf, h]
-      · simp [dependentConeSize, FreeOf, h]
-  | add a c iha ihc =>
-      simp [dependentConeSize, FreeOf, iha, ihc]
-  | mul a c iha ihc =>
-      simp [dependentConeSize, FreeOf, iha, ihc]
+  constructor
+  · intro hzero
+    induction e with
+    | const c =>
+        trivial
+    | var x =>
+        by_cases hx : x = v
+        · subst x
+          simp [dependentConeSize] at hzero
+        · exact hx
+    | add a c iha ihc =>
+        by_cases hchildren :
+            dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
+        · exact ⟨iha hchildren.1, ihc hchildren.2⟩
+        · simp [dependentConeSize, hchildren] at hzero
+    | mul a c iha ihc =>
+        by_cases hchildren :
+            dependentConeSize v a = 0 ∧ dependentConeSize v c = 0
+        · exact ⟨iha hchildren.1, ihc hchildren.2⟩
+        · simp [dependentConeSize, hchildren] at hzero
+  · intro hfree
+    exact dependentConeSize_eq_zero_of_free v e hfree
 
 /-- The dependent cone never exceeds the full tree syntax. -/
 theorem dependentConeSize_le_treeSize (v : Nat) (e : Expr) :
