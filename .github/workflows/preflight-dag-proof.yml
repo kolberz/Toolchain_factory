@@ -15,6 +15,7 @@ on:
       - 'DAGSharedMemo.lean'
       - 'DAGOperationalMemo.lean'
       - 'DAGOperationalMemoProof.lean'
+      - 'DAGOperationalMemoAllocation.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
 
@@ -134,15 +135,24 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
           cp "$GITHUB_WORKSPACE/DAGOperationalMemoProof.lean" DAGOperationalMemoProof.lean
-          lake env lean DAGOperationalMemoProof.lean \
+          lake env lean -o .lake/build/lib/lean/DAGOperationalMemoProof.olean DAGOperationalMemoProof.lean \
             | tee "$GITHUB_WORKSPACE/dag-operational-proof-preflight.log"
+      - name: Kernel replay operational memo allocation proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGOperationalMemoAllocation.lean" DAGOperationalMemoAllocation.lean
+          lake env lean DAGOperationalMemoAllocation.lean \
+            | tee "$GITHUB_WORKSPACE/dag-operational-allocation-preflight.log"
       - name: Reject placeholders
         run: |
           ! grep -nE '\bsorry\b|\badmit\b' \
             DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
             DAGSupportSensitive.lean DAGCofactorPair.lean \
             DAGAllocatorContract.lean DAGReferenceAllocator.lean \
-            DAGSharedMemo.lean DAGOperationalMemo.lean DAGOperationalMemoProof.lean
+            DAGSharedMemo.lean DAGOperationalMemo.lean DAGOperationalMemoProof.lean \
+            DAGOperationalMemoAllocation.lean
       - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -157,6 +167,7 @@ jobs:
             dag-shared-memo-preflight.log
             dag-operational-memo-preflight.log
             dag-operational-proof-preflight.log
+            dag-operational-allocation-preflight.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
