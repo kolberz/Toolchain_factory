@@ -1,0 +1,173 @@
+name: Replay certified DAG core
+run-name: DAG certified core · ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'DAGRestrictionUpdate.lean'
+      - 'DAGSemiringSemantics.lean'
+      - 'DAGSupportSensitive.lean'
+      - 'DAGAllocatorContract.lean'
+      - 'DAGCertifiedCore.lean'
+      - '.github/workflows/replay-dag-certified-core.yml'
+
+concurrency:
+  group: dag-certified-core-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: [1, 2]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Install replay prerequisites
+        run: sudo apt-get update && sudo apt-get install --yes jq zstd
+
+      - name: Download certified toolchain transport index
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: portable-lean-toolchain-transport-index
+          path: certified-toolchain
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 34789732660
+
+      - name: Download certified toolchain archive parts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: portable-lean-toolchain-part-*
+          path: certified-toolchain
+          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 34789732660
+
+      - name: Reconstruct certified portable toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x certified-toolchain/verify-and-reconstruct.sh
+          bash certified-toolchain/verify-and-reconstruct.sh \
+            certified-toolchain "$RUNNER_TEMP/dag-core-replay"
+          test -x "$RUNNER_TEMP/dag-core-replay/portable-lean-toolchain/portable-lean-env"
+
+      - name: Stage DAG theorem core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mathlib="$RUNNER_TEMP/dag-core-replay/portable-lean-toolchain/mathlib"
+          cp DAGRestrictionUpdate.lean "$mathlib/"
+          cp DAGSemiringSemantics.lean "$mathlib/"
+          cp DAGSupportSensitive.lean "$mathlib/"
+          cp DAGAllocatorContract.lean "$mathlib/"
+          cp DAGCertifiedCore.lean "$mathlib/"
+          ! grep -nE '\bsorry\b|\badmit\b' \
+            DAGRestrictionUpdate.lean DAGSemiringSemantics.lean \
+            DAGSupportSensitive.lean DAGAllocatorContract.lean DAGCertifiedCore.lean
+
+      - name: Build offline replay container
+        run: docker build --tag dag-core-offline-verifier --file scripts/offline-verifier.Dockerfile .
+
+      - name: Replay all DAG layers with network disabled and proc lookup denied
+        shell: bash
+        run: |
+          set -euo pipefail
+          portable="$RUNNER_TEMP/dag-core-replay/portable-lean-toolchain"
+          mkdir -p replay-logs
+          docker run --rm --network none \
+            -v "$portable:/portable" \
+            -w /portable/mathlib \
+            dag-core-offline-verifier \
+            bash -c '
+              set -euo pipefail
+              deny=/portable/lib/proc-exe-deny-shim.so
+              run_lean() {
+                env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH \
+                  PATH=/usr/bin:/bin LD_PRELOAD="$deny" \
+                  /portable/portable-lean-env lean "$@"
+              }
+              mkdir -p .lake/build/lib/lean /portable/replay-logs
+              run_lean -o .lake/build/lib/lean/DAGRestrictionUpdate.olean DAGRestrictionUpdate.lean \
+                | tee /portable/replay-logs/01-semantic.log
+              run_lean -o .lake/build/lib/lean/DAGSemiringSemantics.olean DAGSemiringSemantics.lean \
+                | tee /portable/replay-logs/02-semiring.log
+              run_lean -o .lake/build/lib/lean/DAGSupportSensitive.olean DAGSupportSensitive.lean \
+                | tee /portable/replay-logs/03-support.log
+              run_lean -o .lake/build/lib/lean/DAGAllocatorContract.olean DAGAllocatorContract.lean \
+                | tee /portable/replay-logs/04-allocator.log
+              run_lean DAGCertifiedCore.lean \
+                | tee /portable/replay-logs/05-core.log
+            '
+          cp "$portable"/replay-logs/*.log replay-logs/
+
+      - name: Require expected axiom surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "evalSemiring_restrict' depends on axioms: [propext]" replay-logs/02-semiring.log
+          grep -F "evalSemiring_update_eq_marginalize' depends on axioms: [propext]" replay-logs/02-semiring.log
+          grep -F "dependentConeSize_eq_zero_iff_free' depends on axioms: [propext]" replay-logs/03-support.log
+          grep -F "receipt_allocation_bound' does not depend on any axioms" replay-logs/04-allocator.log
+          grep -F "certifiedCore_marker' does not depend on any axioms" replay-logs/05-core.log
+
+      - name: Write deterministic replay receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg schemaVersion '1.0.0' \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg toolchainRunId '34789732660' \
+            --arg builder '${{ matrix.builder }}' \
+            --arg restrictionSha "$(sha256sum DAGRestrictionUpdate.lean | cut -d' ' -f1)" \
+            --arg semiringSha "$(sha256sum DAGSemiringSemantics.lean | cut -d' ' -f1)" \
+            --arg supportSha "$(sha256sum DAGSupportSensitive.lean | cut -d' ' -f1)" \
+            --arg allocatorSha "$(sha256sum DAGAllocatorContract.lean | cut -d' ' -f1)" \
+            --arg coreSha "$(sha256sum DAGCertifiedCore.lean | cut -d' ' -f1)" \
+            --arg semanticLogSha "$(sha256sum replay-logs/01-semantic.log | cut -d' ' -f1)" \
+            --arg semiringLogSha "$(sha256sum replay-logs/02-semiring.log | cut -d' ' -f1)" \
+            --arg supportLogSha "$(sha256sum replay-logs/03-support.log | cut -d' ' -f1)" \
+            --arg allocatorLogSha "$(sha256sum replay-logs/04-allocator.log | cut -d' ' -f1)" \
+            --arg coreLogSha "$(sha256sum replay-logs/05-core.log | cut -d' ' -f1)" \
+            '{schemaVersion:$schemaVersion,sourceCommit:$sourceCommit,toolchainRunId:$toolchainRunId,builder:$builder,networkMode:"none",procExeLookup:"denied",proofSources:{restriction:$restrictionSha,semiring:$semiringSha,support:$supportSha,allocator:$allocatorSha,core:$coreSha},logs:{semantic:$semanticLogSha,semiring:$semiringLogSha,support:$supportLogSha,allocator:$allocatorLogSha,core:$coreLogSha}}' \
+            > replay-receipt.json
+
+      - name: Upload replay evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: dag-certified-core-${{ matrix.builder }}
+          path: |
+            replay-receipt.json
+            replay-logs/*.log
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 90
+
+  compare-core-replays:
+    needs: replay-core
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: dag-certified-core-*
+          path: receipts
+      - name: Compare independent receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq 'del(.builder)' receipts/dag-certified-core-1/replay-receipt.json > receipt-1.normalized.json
+          jq 'del(.builder)' receipts/dag-certified-core-2/replay-receipt.json > receipt-2.normalized.json
+          cmp receipt-1.normalized.json receipt-2.normalized.json
+          echo 'TWO-BUILDER DAG CORE REPLAY VERIFIED'
