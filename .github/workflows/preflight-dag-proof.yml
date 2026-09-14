@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - 'DAGRestrictionUpdate.lean'
+      - 'DAGSupportSensitive.lean'
       - '.github/workflows/preflight-dag-proof.yml'
       - 'toolchain-profiles.json'
 
@@ -55,20 +56,33 @@ jobs:
           printf '%s  %s\n' "$manifest_sha" "$RUNNER_TEMP/mathlib4/lake-manifest.json" | sha256sum --check --strict
           cd "$RUNNER_TEMP/mathlib4"
           lake exe cache get
-      - name: Kernel replay DAG theorem candidate
+      - name: Kernel replay semantic restriction theorem
         shell: bash
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/mathlib4"
-          lake env lean "$GITHUB_WORKSPACE/DAGRestrictionUpdate.lean" | tee "$GITHUB_WORKSPACE/dag-preflight.log"
+          cp "$GITHUB_WORKSPACE/DAGRestrictionUpdate.lean" DAGRestrictionUpdate.lean
+          mkdir -p .lake/build/lib/lean
+          lake env lean -o .lake/build/lib/lean/DAGRestrictionUpdate.olean DAGRestrictionUpdate.lean \
+            | tee "$GITHUB_WORKSPACE/dag-preflight.log"
+      - name: Kernel replay support-sensitive theorem layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/mathlib4"
+          cp "$GITHUB_WORKSPACE/DAGSupportSensitive.lean" DAGSupportSensitive.lean
+          lake env lean DAGSupportSensitive.lean \
+            | tee "$GITHUB_WORKSPACE/dag-support-preflight.log"
       - name: Reject placeholders
         run: |
-          ! grep -nE '\bsorry\b|\badmit\b' DAGRestrictionUpdate.lean
-      - name: Upload preflight log
+          ! grep -nE '\bsorry\b|\badmit\b' DAGRestrictionUpdate.lean DAGSupportSensitive.lean
+      - name: Upload preflight logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dag-lean-preflight
-          path: dag-preflight.log
+          path: |
+            dag-preflight.log
+            dag-support-preflight.log
           if-no-files-found: error
           compression-level: 6
           retention-days: 90
