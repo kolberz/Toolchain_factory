@@ -19,7 +19,7 @@ on:
         default: false
         type: boolean
   push:
-    branches: [main]
+    branches: [main, portablelean-audit-2026-11-26]
     paths:
       - '.github/workflows/build-portable-toolchain.yml'
       - '.github/workflows/rehydrate-certified-release.yml'
@@ -80,6 +80,8 @@ jobs:
       - name: Build and certify portable Lean + Lake + Mathlib
         env:
           BUILDER_INSTANCE: ${{ matrix.builder }}
+          PORTABLE_PROOF_SOURCE: PortableLean_Strengthened_Lean4322.lean
+          PORTABLE_PROOF_FILE: PortableLean_Strengthened_Lean4322.lean
         run: bash scripts/build-portable-toolchain.sh
       - name: Upload deterministic builder fingerprint
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
