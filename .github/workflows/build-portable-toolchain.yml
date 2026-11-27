@@ -82,6 +82,8 @@ jobs:
           BUILDER_INSTANCE: ${{ matrix.builder }}
           PORTABLE_PROOF_SOURCE: PortableLean_Strengthened_Lean4322.lean
           PORTABLE_PROOF_FILE: PortableLean_Strengthened_Lean4322.lean
+          PORTABLE_AXIOM_AUDIT_SOURCE: PrintAxioms_PortableLean.lean
+          PORTABLE_AXIOM_AUDIT_FILE: PrintAxioms_PortableLean.lean
         run: bash scripts/build-portable-toolchain.sh
       - name: Upload deterministic builder fingerprint
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

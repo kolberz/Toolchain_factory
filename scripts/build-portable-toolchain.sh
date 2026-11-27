@@ -140,6 +140,21 @@ fi
   exit 1
 }
 
+portable_axiom_audit_file="${PORTABLE_AXIOM_AUDIT_FILE:-}"
+if [[ -n "${PORTABLE_AXIOM_AUDIT_SOURCE:-}" ]]; then
+  if [[ "$PORTABLE_AXIOM_AUDIT_SOURCE" = /* || "$PORTABLE_AXIOM_AUDIT_SOURCE" == *".."* ]]; then
+    echo 'PORTABLE_AXIOM_AUDIT_SOURCE must be a relative path inside the repository' >&2
+    exit 1
+  fi
+  [[ -f "$repo_root/$PORTABLE_AXIOM_AUDIT_SOURCE" ]] || {
+    echo "portable axiom audit source does not exist: $PORTABLE_AXIOM_AUDIT_SOURCE" >&2
+    exit 1
+  }
+  portable_axiom_audit_file="${portable_axiom_audit_file:-$(basename "$PORTABLE_AXIOM_AUDIT_SOURCE")}"
+  mkdir -p "$(dirname "$mathlib_dir/$portable_axiom_audit_file")"
+  cp "$repo_root/$PORTABLE_AXIOM_AUDIT_SOURCE" "$mathlib_dir/$portable_axiom_audit_file"
+fi
+
 # Capture the exact known-good Lake search path while the build environment is
 # working, then replace ephemeral build roots with a stable bundle token.
 canonical_lean_path="$(lake env bash -c 'printf "%s" "${LEAN_PATH:-}"')"
@@ -194,6 +209,10 @@ record_gate 'portable-mathlib-smoke' 'PASS' \
   "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean MathlibSmoke.lean"
 record_gate 'portable-proof-replay' 'PASS' \
   "env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean '$portable_proof_file'"
+if [[ -n "$portable_axiom_audit_file" ]]; then
+  record_gate 'portable-proof-axiom-audit' 'PASS' \
+    "cat '$portable_root/mathlib/$portable_proof_file' '$portable_root/mathlib/$portable_axiom_audit_file' | env -u LEAN_SYSROOT -u LEAN_PATH -u LEAN -u LAKE -u LD_LIBRARY_PATH PATH=/usr/bin:/bin LD_PRELOAD='$proc_exe_deny' '$portable_root/portable-lean-env' lean --stdin | tee '$out_dir/portable-proof-axioms.txt' && ! grep -Eiq 'sorryAx|declaration uses' '$out_dir/portable-proof-axioms.txt'"
+fi
 
 (
   cd "$portable_root"
