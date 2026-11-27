@@ -1,0 +1,110 @@
+PORTABLELEAN AXIOM AUDIT RECEIPT (2026-11-27)
+===============================================
+
+Repository: C:\Users\admin\Downloads\state machines\Toolchain_factory
+Branch: portablelean-verify-axioms-2026-11-27 (branched from main at 6aa142f)
+Target Proof File: PortableLean_Strengthened_Lean4322.lean
+Target Proof Git Blob SHA: 130b363ba07c26dda43976486bd8d4da87136c68
+
+1. Lean Toolchain Version
+-------------------------
+Command:
+  elan run leanprover/lean4:v4.32.2 lean --version
+Exit Code: 0
+Output:
+  Lean (version 4.32.2, x86_64-w64-windows-gnu, commit f3b06c705e6c85f5314019d5d3baab0fec5b580c, Release)
+
+2. Git Blob SHA Verification
+----------------------------
+Command:
+  git hash-object PortableLean_Strengthened_Lean4322.lean
+Exit Code: 0
+Output:
+  130b363ba07c26dda43976486bd8d4da87136c68
+
+3. Patch Verification & Application (portablelean_axiom_audit.patch)
+--------------------------------------------------------------------
+Commands:
+  git apply --check "G:\My Drive\SmolVLM-256M 82-ROM Gradio App\portablelean_axiom_audit.patch"
+  git apply "G:\My Drive\SmolVLM-256M 82-ROM Gradio App\portablelean_axiom_audit.patch"
+Exit Codes: 0 / 0
+Modified/Added by Patch:
+  - .github/workflows/build-portable-toolchain.yml (adds PORTABLE_AXIOM_AUDIT_SOURCE / PORTABLE_AXIOM_AUDIT_FILE)
+  - PrintAxioms_PortableLean.lean (new file)
+  - scripts/build-portable-toolchain.sh (adds portable-proof-axiom-audit gate)
+Note: PortableLean_Strengthened_Lean4322.lean remained untouched (blob SHA preserved: 130b363ba07c26dda43976486bd8d4da87136c68).
+
+4. Live Compilation to .olean
+-----------------------------
+Command:
+  elan run leanprover/lean4:v4.32.2 lean -o PortableLean_Strengthened_Lean4322.olean PortableLean_Strengthened_Lean4322.lean
+Exit Code: 0
+Note: Temporary PortableLean_Strengthened_Lean4322.olean was removed after verification.
+
+5. Live Meta-Check & #print axioms (PortableLean_VerifyAxioms_Lean4322.lean)
+----------------------------------------------------------------------------
+Note: Stripped leading UTF-8 BOM (EF BB BF) from PortableLean_VerifyAxioms_Lean4322.lean before running.
+Command:
+  $env:LEAN_PATH = "."
+  elan run leanprover/lean4:v4.32.2 lean PortableLean_VerifyAxioms_Lean4322.lean
+Exit Code: 0
+Output:
+'PortableLean.poly_id' does not depend on any axioms
+'PortableLean.modus_ponens' does not depend on any axioms
+'PortableLean.church_2_plus_2' does not depend on any axioms
+'PortableLean.catalytic_restores_u' depends on axioms: [propext]
+'PortableLean.catalytic_restores_v' depends on axioms: [propext]
+'PortableLean.catalytic_computes_product' depends on axioms: [propext, Quot.sound]
+'PortableLean.ternary_4trits_fit_7bits' does not depend on any axioms
+'PortableLean.ternary_4trits_capacity_values' does not depend on any axioms
+'PortableLean.ternary_4trits_capacity_slack' does not depend on any axioms
+'PortableLean.syracuse_weight_at_one' does not depend on any axioms
+'PortableLean.syracuse_sevenfold_weight_at_one' does not depend on any axioms
+'PortableLean.hadwiger_1d_cover' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.hadwiger_integer_cube_cover' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.sample_regret_threshold_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.oblique_chordal_linear_bound' does not depend on any axioms
+'PortableLean.oblique_chordal_squared_bound' does not depend on any axioms
+AUDIT OK: PortableLean.poly_id -> axioms = []
+AUDIT OK: PortableLean.modus_ponens -> axioms = []
+AUDIT OK: PortableLean.church_2_plus_2 -> axioms = []
+AUDIT OK: PortableLean.catalytic_restores_u -> axioms = [propext]
+AUDIT OK: PortableLean.catalytic_restores_v -> axioms = [propext]
+AUDIT OK: PortableLean.catalytic_computes_product -> axioms = [propext, Quot.sound]
+AUDIT OK: PortableLean.ternary_4trits_fit_7bits -> axioms = []
+AUDIT OK: PortableLean.ternary_4trits_capacity_values -> axioms = []
+AUDIT OK: PortableLean.ternary_4trits_capacity_slack -> axioms = []
+AUDIT OK: PortableLean.syracuse_weight_at_one -> axioms = []
+AUDIT OK: PortableLean.syracuse_sevenfold_weight_at_one -> axioms = []
+AUDIT OK: PortableLean.hadwiger_1d_cover -> axioms = [propext, Classical.choice, Quot.sound]
+AUDIT OK: PortableLean.hadwiger_integer_cube_cover -> axioms = [propext, Classical.choice, Quot.sound]
+AUDIT OK: PortableLean.sample_regret_threshold_certificate -> axioms = [propext, Classical.choice, Quot.sound]
+AUDIT OK: PortableLean.oblique_chordal_linear_bound -> axioms = []
+AUDIT OK: PortableLean.oblique_chordal_squared_bound -> axioms = []
+
+6. Concatenated Stdin Audit (PrintAxioms_PortableLean.lean) & Grep Gate Check
+-----------------------------------------------------------------------------
+Command:
+  (Get-Content -Raw PortableLean_Strengthened_Lean4322.lean) + "`n" + (Get-Content -Raw PrintAxioms_PortableLean.lean) | elan run leanprover/lean4:v4.32.2 lean --stdin
+Exit Code: 0
+Output:
+'PortableLean.poly_id' does not depend on any axioms
+'PortableLean.modus_ponens' does not depend on any axioms
+'PortableLean.church_2_plus_2' does not depend on any axioms
+'PortableLean.catalytic_restores_u' depends on axioms: [propext]
+'PortableLean.catalytic_restores_v' depends on axioms: [propext]
+'PortableLean.catalytic_computes_product' depends on axioms: [propext, Quot.sound]
+'PortableLean.ternary_4trits_fit_7bits' does not depend on any axioms
+'PortableLean.ternary_4trits_capacity_values' does not depend on any axioms
+'PortableLean.ternary_4trits_capacity_slack' does not depend on any axioms
+'PortableLean.syracuse_weight_at_one' does not depend on any axioms
+'PortableLean.syracuse_sevenfold_weight_at_one' does not depend on any axioms
+'PortableLean.hadwiger_1d_cover' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.hadwiger_integer_cube_cover' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.sample_regret_threshold_certificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+'PortableLean.oblique_chordal_linear_bound' does not depend on any axioms
+'PortableLean.oblique_chordal_squared_bound' does not depend on any axioms
+
+Grep Check:
+  $stdinOut | C:\Program Files\Git\usr\bin\grep.exe -Eiq 'sorryAx|declaration uses'
+Exit Code: 1 (no match; negated check `! grep -Eiq 'sorryAx|declaration uses'` passes cleanly with no false positives on `'...' depends on axioms: [...]` or `'...' does not depend on any axioms`).
